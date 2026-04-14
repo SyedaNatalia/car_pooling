@@ -7,7 +7,8 @@ class ForgotPasswordScreen extends StatefulWidget {
   const ForgotPasswordScreen({super.key});
 
   @override
-  State<ForgotPasswordScreen> createState() => _ForgotPasswordScreenState();
+  State<ForgotPasswordScreen> createState() =>
+      _ForgotPasswordScreenState();
 }
 
 class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
@@ -25,13 +26,18 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
 
   Future<void> _sendResetEmail() async {
     if (!_formKey.currentState!.validate()) return;
-    setState(() { _isLoading = true; _errorMessage = null; });
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
 
     try {
-      await AuthService().sendPasswordResetEmail(_emailController.text.trim());
+      await AuthService()
+          .sendPasswordResetEmail(_emailController.text.trim());
       if (mounted) setState(() => _emailSent = true);
     } catch (e) {
-      setState(() => _errorMessage = 'Could not send reset email. Check your email address.');
+      setState(() =>
+          _errorMessage = e.toString().replaceAll('Exception: ', ''));
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -66,6 +72,8 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const SizedBox(height: 32),
+
+          // ── Icon ──────────────────────────────────────────────
           Center(
             child: Container(
               width: 72,
@@ -74,7 +82,8 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                 color: const Color(0xFFFEF3C7),
                 borderRadius: BorderRadius.circular(20),
               ),
-              child: const Icon(Icons.lock_reset, color: Color(0xFFD97706), size: 36),
+              child: const Icon(Icons.lock_reset,
+                  color: Color(0xFFD97706), size: 36),
             ),
           ),
           const SizedBox(height: 24),
@@ -91,13 +100,15 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
           const SizedBox(height: 8),
           const Center(
             child: Text(
-              'Enter your email and we\'ll send\nyou a password reset link',
+              "Enter your email and we'll send\nyou a password reset link",
               textAlign: TextAlign.center,
-              style: TextStyle(color: AppTheme.textMedium, fontSize: 14, height: 1.5),
+              style: TextStyle(
+                  color: AppTheme.textMedium, fontSize: 14, height: 1.5),
             ),
           ),
           const SizedBox(height: 36),
 
+          // ── Error banner ──────────────────────────────────────
           if (_errorMessage != null) ...[
             Container(
               padding: const EdgeInsets.all(12),
@@ -108,18 +119,25 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.error_outline, color: AppTheme.error, size: 18),
+                  const Icon(Icons.error_outline,
+                      color: AppTheme.error, size: 18),
                   const SizedBox(width: 8),
-                  Expanded(child: Text(_errorMessage!,
-                    style: const TextStyle(color: AppTheme.error, fontSize: 13))),
+                  Expanded(
+                      child: Text(_errorMessage!,
+                          style: const TextStyle(
+                              color: AppTheme.error, fontSize: 13))),
                 ],
               ),
             ),
             const SizedBox(height: 16),
           ],
 
+          // ── Email field ───────────────────────────────────────
           const Text('Email',
-            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: AppTheme.textDark)),
+              style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  color: AppTheme.textDark)),
           const SizedBox(height: 8),
           TextFormField(
             controller: _emailController,
@@ -128,7 +146,8 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
             onFieldSubmitted: (_) => _sendResetEmail(),
             decoration: const InputDecoration(
               hintText: 'example@gmail.com',
-              prefixIcon: Icon(Icons.email_outlined, color: AppTheme.textDark),
+              prefixIcon:
+                  Icon(Icons.email_outlined, color: AppTheme.textDark),
             ),
             validator: (v) {
               if (v == null || v.isEmpty) return 'Email is required';
@@ -139,13 +158,20 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
 
           const SizedBox(height: 24),
 
-          ElevatedButton(
-            onPressed: _isLoading ? null : _sendResetEmail,
-            child: _isLoading
-                ? const SizedBox(
-                    height: 20, width: 20,
-                    child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5))
-                : const Text('Send Reset Link'),
+          // ── Send button ───────────────────────────────────────
+          SizedBox(
+            width: double.infinity,
+            height: 52,
+            child: ElevatedButton(
+              onPressed: _isLoading ? null : _sendResetEmail,
+              child: _isLoading
+                  ? const SizedBox(
+                      height: 20,
+                      width: 20,
+                      child: CircularProgressIndicator(
+                          color: Colors.white, strokeWidth: 2.5))
+                  : const Text('Send Reset Link'),
+            ),
           ),
 
           const SizedBox(height: 16),
@@ -153,7 +179,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
             child: TextButton(
               onPressed: () => context.go('/auth/login'),
               child: const Text('Back to Login',
-                style: TextStyle(color: AppTheme.textMedium)),
+                  style: TextStyle(color: AppTheme.textMedium)),
             ),
           ),
         ],
@@ -172,7 +198,8 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
             color: const Color(0xFFF0FDF4),
             borderRadius: BorderRadius.circular(24),
           ),
-          child: const Icon(Icons.mark_email_read_outlined, color: AppTheme.success, size: 44),
+          child: const Icon(Icons.mark_email_read_outlined,
+              color: AppTheme.success, size: 44),
         ),
         const SizedBox(height: 24),
         const Text(
@@ -185,25 +212,30 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
         ),
         const SizedBox(height: 10),
         Text(
-          'We\'ve sent a password reset link to\n${_emailController.text}',
+          'We\'ve sent a reset link to\n${_emailController.text}',
           textAlign: TextAlign.center,
-          style: const TextStyle(color: AppTheme.textMedium, fontSize: 14, height: 1.6),
+          style: const TextStyle(
+              color: AppTheme.textMedium, fontSize: 14, height: 1.6),
         ),
         const SizedBox(height: 8),
         const Text(
-          'Check your inbox (and spam folder)',
+          'Check your inbox and spam folder',
           style: TextStyle(color: AppTheme.textLight, fontSize: 13),
         ),
         const SizedBox(height: 40),
-        ElevatedButton(
-          onPressed: () => context.go('/auth/login'),
-          child: const Text('Back to Login'),
+        SizedBox(
+          width: double.infinity,
+          height: 52,
+          child: ElevatedButton(
+            onPressed: () => context.go('/auth/login'),
+            child: const Text('Back to Login'),
+          ),
         ),
         const SizedBox(height: 12),
         TextButton(
           onPressed: () => setState(() => _emailSent = false),
-          child: const Text('Didn\'t receive it? Try again',
-            style: TextStyle(color: AppTheme.textMedium)),
+          child: const Text("Didn't receive it? Try again",
+              style: TextStyle(color: AppTheme.textMedium)),
         ),
       ],
     );

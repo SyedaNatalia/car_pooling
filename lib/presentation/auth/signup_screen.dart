@@ -18,18 +18,16 @@ class _SignupScreenState extends State<SignupScreen> {
   final _phoneController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
-  String _selectedDepartment = 'Engineering';
-  String _selectedRole = AppConstants.rolePassenger;
+
+  String _selectedCompany = AppConstants.companies.first;
+  String _selectedDepartment = AppConstants.departments.first;
+  String _selectedRole = AppConstants.roles.first['value']!;
+
   bool _obscurePassword = true;
   bool _obscureConfirm = true;
   bool _isLoading = false;
   String? _errorMessage;
   int _currentStep = 0;
-
-  final List<String> _departments = [
-    'Engineering', 'Marketing', 'Finance', 'HR', 'Operations',
-    'Sales', 'Design', 'Legal', 'Admin', 'Other'
-  ];
 
   @override
   void dispose() {
@@ -43,7 +41,10 @@ class _SignupScreenState extends State<SignupScreen> {
 
   Future<void> _signUp() async {
     if (!_formKey.currentState!.validate()) return;
-    setState(() { _isLoading = true; _errorMessage = null; });
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
 
     try {
       await AuthService().signUp(
@@ -51,20 +52,20 @@ class _SignupScreenState extends State<SignupScreen> {
         email: _emailController.text.trim(),
         password: _passwordController.text,
         phone: _phoneController.text.trim(),
+        company: _selectedCompany,
         department: _selectedDepartment,
         role: _selectedRole,
       );
-
-      if (mounted) {
-        context.go('/home');
-      }
+      if (mounted) context.go('/home');
     } catch (e) {
-      setState(() => _errorMessage = e.toString().replaceAll('Exception: ', ''));
+      setState(() =>
+          _errorMessage = e.toString().replaceAll('Exception: ', ''));
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
+  // ── Step 1: Personal Info ─────────────────────────────────────────
   Widget _buildStep1() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -74,11 +75,13 @@ class _SignupScreenState extends State<SignupScreen> {
         TextFormField(
           controller: _nameController,
           textInputAction: TextInputAction.next,
+          textCapitalization: TextCapitalization.words,
           decoration: const InputDecoration(
-            hintText: 'Enter your name',
+            hintText: 'Enter your full name',
             prefixIcon: Icon(Icons.person_outline, color: AppTheme.textDark),
           ),
-          validator: (v) => v == null || v.isEmpty ? 'Name is required' : null,
+          validator: (v) =>
+              v == null || v.trim().isEmpty ? 'Name is required' : null,
         ),
         const SizedBox(height: 16),
         _fieldLabel('Company Email'),
@@ -89,14 +92,12 @@ class _SignupScreenState extends State<SignupScreen> {
           textInputAction: TextInputAction.next,
           decoration: const InputDecoration(
             hintText: 'example@gmail.com',
-            prefixIcon: Icon(Icons.email_outlined, color: AppTheme.textDark),
+            prefixIcon:
+                Icon(Icons.email_outlined, color: AppTheme.textDark),
           ),
           validator: (v) {
             if (v == null || v.isEmpty) return 'Email is required';
             if (!v.contains('@')) return 'Enter valid email';
-            if (!v.endsWith(AppConstants.companyDomain)) {
-              return 'Use ${AppConstants.companyDomain}';
-            }
             return null;
           },
         ),
@@ -108,56 +109,100 @@ class _SignupScreenState extends State<SignupScreen> {
           keyboardType: TextInputType.phone,
           textInputAction: TextInputAction.next,
           decoration: const InputDecoration(
-            hintText: 'Enter your number',
-            prefixIcon: Icon(Icons.phone_outlined, color: AppTheme.textDark),
+            hintText: '03XX-XXXXXXX',
+            prefixIcon:
+                Icon(Icons.phone_outlined, color: AppTheme.textDark),
           ),
-          validator: (v) => v == null || v.isEmpty ? 'Phone is required' : null,
+          validator: (v) =>
+              v == null || v.isEmpty ? 'Phone number is required' : null,
         ),
       ],
     );
   }
 
+  // ── Step 2: Company, Department & Role (All Dropdowns) ────────────
   Widget _buildStep2() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // Company Dropdown
+        _fieldLabel('Company'),
+        const SizedBox(height: 8),
+        DropdownButtonFormField<String>(
+          value: _selectedCompany,
+          decoration: const InputDecoration(
+            prefixIcon: Icon(Icons.domain_outlined, color: AppTheme.textDark),
+            hintText: 'Select Company',
+          ),
+          items: AppConstants.companies
+              .map((company) => DropdownMenuItem(
+                    value: company,
+                    child: Text(company),
+                  ))
+              .toList(),
+          onChanged: (newValue) {
+            if (newValue != null) {
+              setState(() {
+                _selectedCompany = newValue;
+              });
+            }
+          },
+        ),
+        const SizedBox(height: 16),
+
+        // Department Dropdown
         _fieldLabel('Department'),
         const SizedBox(height: 8),
         DropdownButtonFormField<String>(
           value: _selectedDepartment,
           decoration: const InputDecoration(
-            prefixIcon: Icon(Icons.business_outlined, color: AppTheme.textLight),
+            prefixIcon: Icon(Icons.business_outlined, color: AppTheme.textDark),
+            hintText: 'Select Department',
           ),
-          items: _departments.map((d) => DropdownMenuItem(value: d, child: Text(d))).toList(),
-          onChanged: (v) => setState(() => _selectedDepartment = v!),
+          items: AppConstants.departments
+              .map((department) => DropdownMenuItem(
+                    value: department,
+                    child: Text(department),
+                  ))
+              .toList(),
+          onChanged: (newValue) {
+            if (newValue != null) {
+              setState(() {
+                _selectedDepartment = newValue;
+              });
+            }
+          },
         ),
-        const SizedBox(height: 20),
-        _fieldLabel('I want to'),
-        const SizedBox(height: 10),
-        _roleCard(
-          role: AppConstants.rolePassenger,
-          icon: Icons.airline_seat_recline_normal,
-          title: 'Find rides',
-          subtitle: 'I need a ride to office',
-        ),
-        const SizedBox(height: 10),
-        _roleCard(
-          role: AppConstants.roleDriver,
-          icon: Icons.drive_eta,
-          title: 'Offer rides',
-          subtitle: 'I have a car and want to share',
-        ),
-        const SizedBox(height: 10),
-        _roleCard(
-          role: AppConstants.roleBoth,
-          icon: Icons.swap_horiz,
-          title: 'Both',
-          subtitle: 'Find rides and offer rides',
+        const SizedBox(height: 16),
+
+        // Role Dropdown
+        _fieldLabel('Role'),
+        const SizedBox(height: 8),
+        DropdownButtonFormField<String>(
+          value: _selectedRole,
+          decoration: const InputDecoration(
+            prefixIcon: Icon(Icons.person_outline, color: AppTheme.textDark),
+            hintText: 'Select Role',
+          ),
+          items: AppConstants.roles
+              .map((role) => DropdownMenuItem(
+                    value: role['value'],
+                    child: Text(role['label']!),
+                  ))
+              .toList(),
+          onChanged: (newValue) {
+            if (newValue != null) {
+              setState(() {
+                _selectedRole = newValue;
+              });
+            }
+          },
         ),
       ],
     );
   }
 
+  // ── Step 3: Password ──────────────────────────────────────────────
   Widget _buildStep3() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -169,19 +214,23 @@ class _SignupScreenState extends State<SignupScreen> {
           obscureText: _obscurePassword,
           textInputAction: TextInputAction.next,
           decoration: InputDecoration(
-            hintText: 'Enter your password',
-            prefixIcon: const Icon(Icons.lock_outline, color: AppTheme.textDark),
+            hintText: 'Enter Your Password',
+            prefixIcon:
+                const Icon(Icons.lock_outline, color: AppTheme.textDark),
             suffixIcon: IconButton(
               icon: Icon(
-                _obscurePassword ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                _obscurePassword
+                    ? Icons.visibility_off_outlined
+                    : Icons.visibility_outlined,
                 color: AppTheme.textDark,
               ),
-              onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+              onPressed: () =>
+                  setState(() => _obscurePassword = !_obscurePassword),
             ),
           ),
           validator: (v) {
             if (v == null || v.isEmpty) return 'Password is required';
-            if (v.length < 8) return 'Password must be at least 8 characters';
+            if (v.length < 6) return 'Minimum 6 characters required';
             return null;
           },
         ),
@@ -194,18 +243,23 @@ class _SignupScreenState extends State<SignupScreen> {
           textInputAction: TextInputAction.done,
           decoration: InputDecoration(
             hintText: 'Re-enter password',
-            prefixIcon: const Icon(Icons.lock_outline, color: AppTheme.textDark),
+            prefixIcon:
+                const Icon(Icons.lock_outline, color: AppTheme.textDark),
             suffixIcon: IconButton(
               icon: Icon(
-                _obscureConfirm ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                _obscureConfirm
+                    ? Icons.visibility_off_outlined
+                    : Icons.visibility_outlined,
                 color: AppTheme.textDark,
               ),
-              onPressed: () => setState(() => _obscureConfirm = !_obscureConfirm),
+              onPressed: () =>
+                  setState(() => _obscureConfirm = !_obscureConfirm),
             ),
           ),
           validator: (v) {
             if (v == null || v.isEmpty) return 'Please confirm password';
-            if (v != _passwordController.text) return 'Passwords do not match';
+            if (v != _passwordController.text)
+              return 'Passwords do not match';
             return null;
           },
         ),
@@ -213,72 +267,25 @@ class _SignupScreenState extends State<SignupScreen> {
     );
   }
 
-  Widget _roleCard({
-    required String role,
-    required IconData icon,
-    required String title,
-    required String subtitle,
-  }) {
-    final isSelected = _selectedRole == role;
-    return GestureDetector(
-      onTap: () => setState(() => _selectedRole = role),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: isSelected ? AppTheme.primaryLight : AppTheme.bgWhite,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: isSelected ? AppTheme.primary : AppTheme.border,
-            width: isSelected ? 2 : 1,
-          ),
-        ),
-        child: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: isSelected ? AppTheme.primary : AppTheme.bgLight,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Icon(icon,
-                color: isSelected ? Colors.white : AppTheme.textMedium,
-                size: 22,
-              ),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(title,
-                    style: TextStyle(
-                      fontWeight: FontWeight.w600,
-                      color: isSelected ? AppTheme.primary : AppTheme.textDark,
-                    ),
-                  ),
-                  Text(subtitle,
-                    style: const TextStyle(fontSize: 12, color: AppTheme.textMedium),
-                  ),
-                ],
-              ),
-            ),
-            if (isSelected)
-              const Icon(Icons.check_circle, color: AppTheme.primary, size: 22),
-          ],
-        ),
-      ),
-    );
-  }
-
   Widget _fieldLabel(String label) => Text(
-    label,
-    style: const TextStyle(
-      fontSize: 14,
-      fontWeight: FontWeight.w500,
-      color: AppTheme.textDark,
-    ),
-  );
+        label,
+        style: const TextStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.w500,
+          color: AppTheme.textDark,
+        ),
+      );
+
+  String get _stepTitle {
+    switch (_currentStep) {
+      case 0:
+        return 'Personal Info';
+      case 1:
+        return 'Company Details';
+      default:
+        return 'Set Password';
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -287,18 +294,22 @@ class _SignupScreenState extends State<SignupScreen> {
       appBar: AppBar(
         backgroundColor: AppTheme.bgLight,
         elevation: 0,
-        leading: _currentStep > 0
-            ? IconButton(
-                icon: const Icon(Icons.arrow_back_ios_new, size: 18),
-                onPressed: () => setState(() => _currentStep--),
-              )
-            : IconButton(
-                icon: const Icon(Icons.arrow_back_ios_new, size: 18),
-                onPressed: () => context.go('/auth/login'),
-              ),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new, size: 18),
+          onPressed: () {
+            if (_currentStep > 0) {
+              setState(() => _currentStep--);
+            } else {
+              context.go('/auth/login');
+            }
+          },
+        ),
         title: Text(
-          _currentStep == 0 ? 'Personal Info' :
-          _currentStep == 1 ? 'Your Role' : 'Set Password',
+          _stepTitle,
+          style: const TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.w600,
+          ),
         ),
       ),
       body: SafeArea(
@@ -311,17 +322,19 @@ class _SignupScreenState extends State<SignupScreen> {
               children: [
                 const SizedBox(height: 8),
 
-                // Step indicator
+                // ── Step indicator ────────────────────────────────
                 Row(
-                  children: List.generate(3, (i) {
-                    final done = i < _currentStep;
-                    final active = i == _currentStep;
+                  children: List.generate(3, (index) {
+                    final isCompleted = index < _currentStep;
+                    final isActive = index == _currentStep;
                     return Expanded(
                       child: Container(
-                        margin: EdgeInsets.only(right: i < 2 ? 8 : 0),
+                        margin: EdgeInsets.only(right: index < 2 ? 8 : 0),
                         height: 4,
                         decoration: BoxDecoration(
-                          color: done || active ? AppTheme.primary : AppTheme.border,
+                          color: isCompleted || isActive
+                              ? AppTheme.primary
+                              : AppTheme.border,
                           borderRadius: BorderRadius.circular(2),
                         ),
                       ),
@@ -329,8 +342,19 @@ class _SignupScreenState extends State<SignupScreen> {
                   }),
                 ),
 
+                const SizedBox(height: 12),
+                Text(
+                  'Step ${_currentStep + 1} of 3',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppTheme.textLight,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+
                 const SizedBox(height: 24),
 
+                // ── Error message ─────────────────────────────────
                 if (_errorMessage != null) ...[
                   Container(
                     padding: const EdgeInsets.all(12),
@@ -341,39 +365,77 @@ class _SignupScreenState extends State<SignupScreen> {
                     ),
                     child: Row(
                       children: [
-                        const Icon(Icons.error_outline, color: AppTheme.error, size: 18),
+                        const Icon(Icons.error_outline,
+                            color: AppTheme.error, size: 18),
                         const SizedBox(width: 8),
-                        Expanded(child: Text(_errorMessage!,
-                          style: const TextStyle(color: AppTheme.error, fontSize: 13))),
+                        Expanded(
+                          child: Text(
+                            _errorMessage!,
+                            style: const TextStyle(
+                              color: AppTheme.error,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
                       ],
                     ),
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 20),
                 ],
 
-                if (_currentStep == 0) _buildStep1(),
-                if (_currentStep == 1) _buildStep2(),
-                if (_currentStep == 2) _buildStep3(),
+                // ── Step content ──────────────────────────────────
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 300),
+                  child: Column(
+                    key: ValueKey(_currentStep),
+                    children: [
+                      if (_currentStep == 0) _buildStep1(),
+                      if (_currentStep == 1) _buildStep2(),
+                      if (_currentStep == 2) _buildStep3(),
+                    ],
+                  ),
+                ),
 
                 const SizedBox(height: 32),
 
-                // Next / Submit button
-                ElevatedButton(
-                  onPressed: _isLoading ? null : () {
-                    if (_currentStep < 2) {
-                      if (_formKey.currentState!.validate()) {
-                        setState(() => _currentStep++);
-                      }
-                    } else {
-                      _signUp();
-                    }
-                  },
-                  child: _isLoading
-                      ? const SizedBox(
-                          height: 20, width: 20,
-                          child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5),
-                        )
-                      : Text(_currentStep < 2 ? 'Continue' : 'Create Account'),
+                // ── Next / Submit button ──────────────────────────
+                SizedBox(
+                  width: double.infinity,
+                  height: 52,
+                  child: ElevatedButton(
+                    onPressed: _isLoading
+                        ? null
+                        : () {
+                            if (_currentStep < 2) {
+                              if (_formKey.currentState!.validate()) {
+                                setState(() => _currentStep++);
+                              }
+                            } else {
+                              _signUp();
+                            }
+                          },
+                    style: ElevatedButton.styleFrom(
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: _isLoading
+                        ? const SizedBox(
+                            height: 20,
+                            width: 20,
+                            child: CircularProgressIndicator(
+                              color: Colors.white,
+                              strokeWidth: 2.5,
+                            ),
+                          )
+                        : Text(
+                            _currentStep < 2 ? 'Continue' : 'Create Account',
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                  ),
                 ),
 
                 const SizedBox(height: 16),
@@ -383,13 +445,24 @@ class _SignupScreenState extends State<SignupScreen> {
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Text('Already have an account? ',
-                          style: TextStyle(color: AppTheme.textMedium)),
+                        const Text(
+                          'Already have an account? ',
+                          style: TextStyle(color: AppTheme.textMedium),
+                        ),
                         TextButton(
                           onPressed: () => context.go('/auth/login'),
-                          style: TextButton.styleFrom(padding: EdgeInsets.zero),
-                          child: const Text('Sign In',
-                            style: TextStyle(color: AppTheme.primary, fontWeight: FontWeight.w600)),
+                          style: TextButton.styleFrom(
+                            padding: EdgeInsets.zero,
+                            minimumSize: Size.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                          child: const Text(
+                            'Sign In',
+                            style: TextStyle(
+                              color: AppTheme.primary,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
                         ),
                       ],
                     ),

@@ -28,7 +28,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
   Future<void> _login() async {
     if (!_formKey.currentState!.validate()) return;
-    setState(() { _isLoading = true; _errorMessage = null; });
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
 
     try {
       await AuthService().login(
@@ -37,7 +40,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       );
       if (mounted) context.go('/home');
     } catch (e) {
-      setState(() => _errorMessage = 'Login failed. Please try again.');
+      setState(() =>
+          _errorMessage = e.toString().replaceAll('Exception: ', ''));
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -57,7 +61,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               children: [
                 const SizedBox(height: 48),
 
-                // Logo + Title
+                // ── Logo + Title ──────────────────────────────────
                 Center(
                   child: Column(
                     children: [
@@ -84,7 +88,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         ),
                       ),
                       const SizedBox(height: 6),
-                      Text(
+                      const Text(
                         'Sign in to your account',
                         style: TextStyle(
                           fontSize: 15,
@@ -97,22 +101,26 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
                 const SizedBox(height: 40),
 
+                // ── Error banner ──────────────────────────────────
                 if (_errorMessage != null) ...[
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
                       color: const Color(0xFFFEF2F2),
                       borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: const Color(0xFFFECACA)),
+                      border:
+                          Border.all(color: const Color(0xFFFECACA)),
                     ),
                     child: Row(
                       children: [
-                        const Icon(Icons.error_outline, color: AppTheme.error, size: 18),
+                        const Icon(Icons.error_outline,
+                            color: AppTheme.error, size: 18),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
                             _errorMessage!,
-                            style: const TextStyle(color: AppTheme.error, fontSize: 13),
+                            style: const TextStyle(
+                                color: AppTheme.error, fontSize: 13),
                           ),
                         ),
                       ],
@@ -121,8 +129,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   const SizedBox(height: 16),
                 ],
 
+                // ── Email ─────────────────────────────────────────
                 const Text('Email',
-                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: AppTheme.textDark)),
+                    style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                        color: AppTheme.textDark)),
                 const SizedBox(height: 8),
                 TextFormField(
                   controller: _emailController,
@@ -130,7 +142,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   textInputAction: TextInputAction.next,
                   decoration: const InputDecoration(
                     hintText: 'example@gmail.com',
-                    prefixIcon: Icon(Icons.email_outlined, color: AppTheme.textDark),
+                    prefixIcon: Icon(Icons.email_outlined,
+                        color: AppTheme.textDark),
                   ),
                   validator: (v) {
                     if (v == null || v.isEmpty) return 'Email is required';
@@ -141,8 +154,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
                 const SizedBox(height: 16),
 
+                // ── Password ──────────────────────────────────────
                 const Text('Password',
-                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: AppTheme.textDark)),
+                    style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                        color: AppTheme.textDark)),
                 const SizedBox(height: 8),
                 TextFormField(
                   controller: _passwordController,
@@ -151,57 +168,77 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   onFieldSubmitted: (_) => _login(),
                   decoration: InputDecoration(
                     hintText: 'Enter your password',
-                    prefixIcon: const Icon(Icons.lock_outline, color: AppTheme.textDark),
+                    prefixIcon: const Icon(Icons.lock_outline,
+                        color: AppTheme.textDark),
                     suffixIcon: IconButton(
                       icon: Icon(
-                        _obscurePassword ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                        _obscurePassword
+                            ? Icons.visibility_off_outlined
+                            : Icons.visibility_outlined,
                         color: AppTheme.textDark,
                       ),
-                      onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+                      onPressed: () => setState(
+                          () => _obscurePassword = !_obscurePassword),
                     ),
                   ),
                   validator: (v) {
-                    if (v == null || v.isEmpty) return 'Password is required';
+                    if (v == null || v.isEmpty)
+                      return 'Password is required';
                     return null;
                   },
                 ),
 
-                const SizedBox(height: 12),
+                const SizedBox(height: 8),
 
+                // ── Forgot password ───────────────────────────────
                 Align(
                   alignment: Alignment.centerRight,
                   child: TextButton(
-                    onPressed: () => context.push('/auth/forgot-password'),
+                    onPressed: () =>
+                        context.push('/auth/forgot-password'),
                     child: const Text('Forgot password?',
-                      style: TextStyle(color: AppTheme.primary, fontSize: 14)),
+                        style: TextStyle(
+                            color: AppTheme.primary, fontSize: 14)),
                   ),
                 ),
 
-                const SizedBox(height: 24),
+                const SizedBox(height: 20),
 
-                ElevatedButton(
-                  onPressed: _isLoading ? null : _login,
-                  child: _isLoading
-                      ? const SizedBox(
-                          height: 20, width: 20,
-                          child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5),
-                        )
-                      : const Text('Sign In'),
+                // ── Sign In button ────────────────────────────────
+                SizedBox(
+                  width: double.infinity,
+                  height: 52,
+                  child: ElevatedButton(
+                    onPressed: _isLoading ? null : _login,
+                    child: _isLoading
+                        ? const SizedBox(
+                            height: 20,
+                            width: 20,
+                            child: CircularProgressIndicator(
+                                color: Colors.white, strokeWidth: 2.5),
+                          )
+                        : const Text('Sign In'),
+                  ),
                 ),
 
                 const SizedBox(height: 16),
 
+                // ── Sign up link ──────────────────────────────────
                 Center(
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       const Text("Don't have an account? ",
-                        style: TextStyle(color: AppTheme.textMedium)),
+                          style:
+                              TextStyle(color: AppTheme.textMedium)),
                       TextButton(
                         onPressed: () => context.go('/auth/signup'),
-                        style: TextButton.styleFrom(padding: EdgeInsets.zero),
+                        style: TextButton.styleFrom(
+                            padding: EdgeInsets.zero),
                         child: const Text('Sign Up',
-                          style: TextStyle(color: AppTheme.primary, fontWeight: FontWeight.w600)),
+                            style: TextStyle(
+                                color: AppTheme.primary,
+                                fontWeight: FontWeight.w600)),
                       ),
                     ],
                   ),

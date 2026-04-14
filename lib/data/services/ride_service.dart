@@ -1,132 +1,213 @@
-// lib/data/services/ride_service.dart
-// Pure frontend mock — Firestore nahi hai
-
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/ride_model.dart';
 import '../models/booking_model.dart';
-
-// Mock rides data
-final _mockRides = [
-  RideModel(
-    id: 'ride_001',
-    driverId: 'user_002',
-    driverName: 'Ali Hassan',
-    driverRating: 4.8,
-    startPoint: LocationPoint(address: 'DHA Phase 5, Lahore', lat: 31.4816, lng: 74.3985),
-    endPoint: LocationPoint(address: 'Office, Gulberg III, Lahore', lat: 31.5204, lng: 74.3587),
-    departureTime: DateTime.now().add(const Duration(hours: 2)),
-    totalSeats: 4,
-    availableSeats: 2,
-    status: 'upcoming',
-    notes: 'Will pick from main gate',
-    passengerIds: ['user_003'],
-    createdAt: DateTime.now().subtract(const Duration(hours: 1)),
-  ),
-  RideModel(
-    id: 'ride_002',
-    driverId: 'user_004',
-    driverName: 'Ayesha Khan',
-    driverRating: 4.5,
-    startPoint: LocationPoint(address: 'Johar Town, Lahore', lat: 31.4697, lng: 74.2728),
-    endPoint: LocationPoint(address: 'Office, Gulberg III, Lahore', lat: 31.5204, lng: 74.3587),
-    departureTime: DateTime.now().add(const Duration(hours: 3, minutes: 30)),
-    totalSeats: 3,
-    availableSeats: 1,
-    status: 'upcoming',
-    passengerIds: ['user_005', 'user_006'],
-    createdAt: DateTime.now().subtract(const Duration(hours: 2)),
-  ),
-  RideModel(
-    id: 'ride_003',
-    driverId: 'user_001',
-    driverName: 'Sara Ahmed',
-    driverRating: 4.7,
-    startPoint: LocationPoint(address: 'Model Town, Lahore', lat: 31.4833, lng: 74.3291),
-    endPoint: LocationPoint(address: 'Office, Gulberg III, Lahore', lat: 31.5204, lng: 74.3587),
-    departureTime: DateTime.now().add(const Duration(days: 1, hours: 8)),
-    totalSeats: 4,
-    availableSeats: 3,
-    status: 'upcoming',
-    passengerIds: [],
-    createdAt: DateTime.now().subtract(const Duration(minutes: 30)),
-  ),
-  RideModel(
-    id: 'ride_004',
-    driverId: 'user_002',
-    driverName: 'Ali Hassan',
-    driverRating: 4.8,
-    startPoint: LocationPoint(address: 'Bahria Town, Lahore', lat: 31.3660, lng: 74.2138),
-    endPoint: LocationPoint(address: 'Office, Gulberg III, Lahore', lat: 31.5204, lng: 74.3587),
-    departureTime: DateTime.now().subtract(const Duration(hours: 5)),
-    totalSeats: 4,
-    availableSeats: 0,
-    status: 'completed',
-    passengerIds: ['user_001', 'user_003', 'user_005'],
-    createdAt: DateTime.now().subtract(const Duration(days: 1)),
-  ),
-];
+import '../../core/constants/app_constants.dart';
 
 class RideService {
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+
+  CollectionReference get _rides =>
+      _firestore.collection(AppConstants.ridesCollection);
+
+  CollectionReference get _bookings =>
+      _firestore.collection(AppConstants.bookingsCollection);
+
+  CollectionReference get _ratings =>
+      _firestore.collection(AppConstants.ratingsCollection);
+
+  // ─── Create Ride ──────────────────────────────────────────────────
   Future<String> createRide(RideModel ride) async {
-    await Future.delayed(const Duration(milliseconds: 800));
-    return 'ride_new_${DateTime.now().millisecondsSinceEpoch}';
+    final docRef = await _rides.add(ride.toMap());
+    return docRef.id;
   }
 
   Future<List<RideModel>> searchRides({required DateTime date}) async {
-    await Future.delayed(const Duration(milliseconds: 600));
-    return _mockRides
-        .where((r) =>
-            r.status == 'upcoming' &&
-            r.departureTime.isAfter(DateTime.now()) &&
-            r.availableSeats > 0)
+    final startOfDay =
+        DateTime(date.year, date.month, date.day, 0, 0, 0);
+    final endOfDay =
+        DateTime(date.year, date.month, date.day, 23, 59, 59);
+
+    final snapshot = await _rides
+        .where('status', isEqualTo: AppConstants.rideUpcoming)
+        .where('departureTime',
+            isGreaterThanOrEqualTo: startOfDay.toIso8601String())
+        .where('departureTime',
+            isLessThanOrEqualTo: endOfDay.toIso8601String())
+        .orderBy('departureTime')
+        .get();
+
+    final rides = snapshot.docs
+        .map((doc) => RideModel.fromMap(
+              doc.data() as Map<String, dynamic>,
+              doc.id,
+            ))
         .toList();
+
+    // availableSeats filter in-memory (Firestore restriction ki wajah se)
+    return rides.where((r) => r.availableSeats > 0).toList();
   }
 
+  // ─── Get Ride by ID ───────────────────────────────────────────────
   Future<RideModel?> getRideById(String rideId) async {
-    await Future.delayed(const Duration(milliseconds: 300));
-    try {
-      return _mockRides.firstWhere((r) => r.id == rideId);
-    } catch (_) {
-      return null;
-    }
+    final doc = await _rides.doc(rideId).get();
+    if (!doc.exists) return null;
+    return RideModel.fromMap(doc.data() as Map<String, dynamic>, doc.id);
   }
 
-  // Driver ke rides
-  Stream<List<RideModel>> getDriverRides(String driverId) async* {
-    await Future.delayed(const Duration(milliseconds: 400));
-    yield _mockRides.where((r) => r.driverId == driverId).toList();
+  // ─── Stream single ride (realtime) ───────────────────────────────
+  Stream<RideModel?> streamRide(String rideId) {
+    return _rides.doc(rideId).snapshots().map((doc) {
+      if (!doc.exists) return null;
+      return RideModel.fromMap(doc.data() as Map<String, dynamic>, doc.id);
+    });
   }
 
-  // Passenger ke rides
-  Stream<List<RideModel>> getPassengerRides(String passengerId) async* {
-    await Future.delayed(const Duration(milliseconds: 400));
-    yield _mockRides
-        .where((r) => r.passengerIds.contains(passengerId))
-        .toList();
+  // ─── Driver's Rides ───────────────────────────────────────────────
+  // Required index: driverId ASC → departureTime DESC
+  Stream<List<RideModel>> getDriverRides(String driverId) {
+    return _rides
+        .where('driverId', isEqualTo: driverId)
+        .orderBy('departureTime', descending: true)
+        .snapshots()
+        .map((snap) => snap.docs
+            .map((doc) => RideModel.fromMap(
+                  doc.data() as Map<String, dynamic>,
+                  doc.id,
+                ))
+            .toList());
   }
 
+  // ─── Passenger's Rides ────────────────────────────────────────────
+  // Required index: passengerIds ASC → departureTime DESC
+  Stream<List<RideModel>> getPassengerRides(String passengerId) {
+    return _rides
+        .where('passengerIds', arrayContains: passengerId)
+        .orderBy('departureTime', descending: true)
+        .snapshots()
+        .map((snap) => snap.docs
+            .map((doc) => RideModel.fromMap(
+                  doc.data() as Map<String, dynamic>,
+                  doc.id,
+                ))
+            .toList());
+  }
+
+  // ─── Update Ride Status ───────────────────────────────────────────
   Future<void> updateRideStatus(String rideId, String status) async {
-    await Future.delayed(const Duration(milliseconds: 500));
+    await _rides.doc(rideId).update({'status': status});
   }
 
+  // ─── Cancel Ride ──────────────────────────────────────────────────
   Future<void> cancelRide(String rideId) async {
-    await Future.delayed(const Duration(milliseconds: 500));
+    final batch = _firestore.batch();
+    batch.update(_rides.doc(rideId), {'status': AppConstants.rideCancelled});
+
+    final bookingsSnap = await _bookings
+        .where('rideId', isEqualTo: rideId)
+        .where('status', whereIn: [
+          AppConstants.bookingPending,
+          AppConstants.bookingAccepted,
+        ])
+        .get();
+
+    for (final doc in bookingsSnap.docs) {
+      batch.update(doc.reference, {'status': AppConstants.bookingCancelled});
+    }
+
+    await batch.commit();
   }
 
-  // Booking
+  // ─── Create Booking ───────────────────────────────────────────────
   Future<String> createBooking(BookingModel booking) async {
-    await Future.delayed(const Duration(milliseconds: 700));
-    return 'booking_${DateTime.now().millisecondsSinceEpoch}';
+    final existing = await _bookings
+        .where('rideId', isEqualTo: booking.rideId)
+        .where('passengerId', isEqualTo: booking.passengerId)
+        .where('status', whereIn: [
+          AppConstants.bookingPending,
+          AppConstants.bookingAccepted,
+        ])
+        .get();
+
+    if (existing.docs.isNotEmpty) {
+      throw Exception('You have already booked this ride.');
+    }
+
+    final docRef = await _bookings.add(booking.toMap());
+    return docRef.id;
   }
 
-  Stream<List<BookingModel>> getRideBookings(String rideId) async* {
-    await Future.delayed(const Duration(milliseconds: 400));
-    yield []; // Empty for now
+  // ─── Get Ride's Bookings ──────────────────────────────────────────
+  // FIX: orderBy hata diya — simple single-field query
+  // composite index ki zaroorat nahi
+  // Sorting client-side ho rahi hai
+  Stream<List<BookingModel>> getRideBookings(String rideId) {
+    return _bookings
+        .where('rideId', isEqualTo: rideId)
+        .snapshots()
+        .map((snap) {
+      final list = snap.docs
+          .map((doc) => BookingModel.fromMap(
+                doc.data() as Map<String, dynamic>,
+                doc.id,
+              ))
+          .toList();
+      // Client-side sort by createdAt
+      list.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+      return list;
+    });
   }
 
+  // ─── Get Passenger's Bookings ─────────────────────────────────────
+  // FIX: same — orderBy hata ke client-side sort
+  Stream<List<BookingModel>> getPassengerBookings(String passengerId) {
+    return _bookings
+        .where('passengerId', isEqualTo: passengerId)
+        .snapshots()
+        .map((snap) {
+      final list = snap.docs
+          .map((doc) => BookingModel.fromMap(
+                doc.data() as Map<String, dynamic>,
+                doc.id,
+              ))
+          .toList();
+      // Client-side sort: newest first
+      list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      return list;
+    });
+  }
+
+  // ─── Accept / Reject Booking ──────────────────────────────────────
   Future<void> updateBookingStatus(String bookingId, String status) async {
-    await Future.delayed(const Duration(milliseconds: 400));
+    final bookingDoc = await _bookings.doc(bookingId).get();
+    if (!bookingDoc.exists) throw Exception('Booking not found');
+
+    final booking = BookingModel.fromMap(
+      bookingDoc.data() as Map<String, dynamic>,
+      bookingDoc.id,
+    );
+
+    final batch = _firestore.batch();
+    batch.update(_bookings.doc(bookingId), {'status': status});
+
+    if (status == AppConstants.bookingAccepted) {
+      batch.update(_rides.doc(booking.rideId), {
+        'availableSeats': FieldValue.increment(-1),
+        'passengerIds': FieldValue.arrayUnion([booking.passengerId]),
+      });
+    } else if (status == AppConstants.bookingRejected ||
+        status == AppConstants.bookingCancelled) {
+      if (booking.status == AppConstants.bookingAccepted) {
+        batch.update(_rides.doc(booking.rideId), {
+          'availableSeats': FieldValue.increment(1),
+          'passengerIds': FieldValue.arrayRemove([booking.passengerId]),
+        });
+      }
+    }
+
+    await batch.commit();
   }
 
+  // ─── Submit Rating ────────────────────────────────────────────────
   Future<void> submitRating({
     required String rideId,
     required String raterId,
@@ -134,12 +215,80 @@ class RideService {
     required double rating,
     String? comment,
   }) async {
-    await Future.delayed(const Duration(milliseconds: 500));
+    final existing = await _ratings
+        .where('rideId', isEqualTo: rideId)
+        .where('raterId', isEqualTo: raterId)
+        .where('ratedId', isEqualTo: ratedId)
+        .get();
+
+    if (existing.docs.isNotEmpty) {
+      throw Exception('You have already rated this user for this ride.');
+    }
+
+    final batch = _firestore.batch();
+    final ratingRef = _ratings.doc();
+    batch.set(ratingRef, {
+      'rideId': rideId,
+      'raterId': raterId,
+      'ratedId': ratedId,
+      'rating': rating,
+      'comment': comment,
+      'createdAt': DateTime.now().toIso8601String(),
+    });
+
+    final userDoc = await _firestore
+        .collection(AppConstants.usersCollection)
+        .doc(ratedId)
+        .get();
+
+    if (userDoc.exists) {
+      final userData = userDoc.data()!;
+      final currentRating = (userData['rating'] ?? 0.0).toDouble();
+      final totalRides = (userData['totalRides'] ?? 0) as int;
+      final newTotalRides = totalRides + 1;
+      final newRating =
+          ((currentRating * totalRides) + rating) / newTotalRides;
+
+      batch.update(
+        _firestore.collection(AppConstants.usersCollection).doc(ratedId),
+        {
+          'rating': double.parse(newRating.toStringAsFixed(1)),
+          'totalRides': newTotalRides,
+        },
+      );
+    }
+
+    await batch.commit();
   }
 
-  // Admin
+  // ─── Admin: Get All Rides ─────────────────────────────────────────
   Future<List<RideModel>> getAllRides() async {
-    await Future.delayed(const Duration(milliseconds: 500));
-    return _mockRides;
+    final snapshot =
+        await _rides.orderBy('createdAt', descending: true).get();
+    return snapshot.docs
+        .map((doc) => RideModel.fromMap(
+              doc.data() as Map<String, dynamic>,
+              doc.id,
+            ))
+        .toList();
+  }
+
+  // ─── Admin: Get All Users ─────────────────────────────────────────
+  Future<List<Map<String, dynamic>>> getAllUsers() async {
+    final snapshot = await _firestore
+        .collection(AppConstants.usersCollection)
+        .orderBy('createdAt', descending: true)
+        .get();
+    return snapshot.docs
+        .map((doc) => {'uid': doc.id, ...doc.data()})
+        .toList();
+  }
+
+  // ─── Admin: Toggle User Active Status ────────────────────────────
+  Future<void> toggleUserStatus(String uid, bool isActive) async {
+    await _firestore
+        .collection(AppConstants.usersCollection)
+        .doc(uid)
+        .update({'isActive': isActive});
   }
 }

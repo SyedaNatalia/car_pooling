@@ -1,4 +1,3 @@
-// lib/data/models/booking_model.dart
 import 'ride_model.dart';
 
 class BookingModel {

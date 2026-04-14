@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "902124300718",
+    "project_id": "car-pooling-c242b",
+    "storage_bucket": "car-pooling-c242b.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:902124300718:android:47c1e4dbdf5b525a2b003f",
+        "android_client_info": {
+          "package_name": "com.example.carpooling_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCN9uL_r70ujCaMWFBZF-PmFF-RBe9QN0A"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

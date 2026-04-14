@@ -1,10 +1,9 @@
-// lib/data/models/user_model.dart
-
 class UserModel {
   final String uid;
   final String name;
   final String email;
   final String phone;
+  final String company;
   final String department;
   final String role;
   final String? photoUrl;
@@ -19,6 +18,7 @@ class UserModel {
     required this.name,
     required this.email,
     required this.phone,
+    required this.company,
     required this.department,
     required this.role,
     this.photoUrl,
@@ -35,8 +35,9 @@ class UserModel {
       name: data['name'] ?? '',
       email: data['email'] ?? '',
       phone: data['phone'] ?? '',
+      company: data['company'] ?? '',
       department: data['department'] ?? '',
-      role: data['role'] ?? 'passenger',
+      role: data['role'] ?? 'employee',
       photoUrl: data['photoUrl'],
       carDetails: data['carDetails'] != null
           ? CarDetails.fromMap(data['carDetails'])
@@ -54,6 +55,7 @@ class UserModel {
     'name': name,
     'email': email,
     'phone': phone,
+    'company': company,
     'department': department,
     'role': role,
     'photoUrl': photoUrl,
