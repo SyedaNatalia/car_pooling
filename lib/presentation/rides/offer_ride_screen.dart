@@ -14,7 +14,6 @@ import '../../data/models/ride_model.dart';
 
 const String _kGoogleApiKey = 'AIzaSyBqIfdzqfPN8JIcLkEaGObApnn5JKk-BZI';
 
-// ── Small data class to hold a resolved location ──────────────────
 class _ResolvedLocation {
   final String address;
   final LatLng latLng;
@@ -33,41 +32,47 @@ class _OfferRideScreenState extends State<OfferRideScreen> {
   int _step = 0;
   bool _isLoading = false;
 
-  // ── Map ───────────────────────────────────────────────────────────
+  // Map
   GoogleMapController? _mapController;
   Set<Marker>   _markers   = {};
   Set<Polyline> _polylines = {};
   bool _isLoadingRoute = false;
 
-  // ── Resolved locations ────────────────────────────────────────────
+  // Locations
   _ResolvedLocation? _startLocation;
   _ResolvedLocation? _endLocation;
-  final List<_ResolvedLocation?> _stopLocations = []; // parallel to controllers
+  final List<_ResolvedLocation?> _stopLocations = [];
 
-  // ── Step 1 text controllers ───────────────────────────────────────
+  // Controllers
   final _startController = TextEditingController();
-  final _endController   = TextEditingController(text: '');
+  final _endController   = TextEditingController();
   final List<TextEditingController> _stopControllers = [];
+  final _notesController = TextEditingController();
 
-  // ── Autocomplete state ────────────────────────────────────────────
-  // 'start' | 'end' | 'stop_N'
+  // Autocomplete
   String? _activeField;
   List<Map<String, dynamic>> _suggestions = [];
   Timer? _debounce;
   String _lastQuery = '';
   bool _isLoadingLocation = false;
 
-  // ── Step 2 fields ─────────────────────────────────────────────────
+  // Step 2 fields
   DateTime _departureTime = DateTime.now().add(const Duration(hours: 1));
   int _totalSeats = 3;
-  final _notesController = TextEditingController();
+
+  // FIX: ride type selection
+  String _selectedRideType = 'economy';
+
+  static const _rideTypes = [
+    {'id': 'economy', 'label': 'Economy',  'asset': 'assets/images/economy.JPG',  'desc': 'Budget friendly'},
+    {'id': 'comfort', 'label': 'Comfort',  'asset': 'assets/images/comfort.JPG',  'desc': 'Extra comfort'},
+    {'id': 'premium', 'label': 'Premium',  'asset': 'assets/images/premium.AVIF', 'desc': 'Luxury ride'},
+  ];
 
   @override
   void initState() {
     super.initState();
     _getCurrentLocation();
-    // Pre-resolve the default end location
-    _resolveAndSetEnd(_endController.text);
   }
 
   @override
@@ -81,7 +86,6 @@ class _OfferRideScreenState extends State<OfferRideScreen> {
     super.dispose();
   }
 
-  // ── Get current location for start ───────────────────────────────
   Future<void> _getCurrentLocation() async {
     setState(() => _isLoadingLocation = true);
     try {
@@ -91,20 +95,17 @@ class _OfferRideScreenState extends State<OfferRideScreen> {
 
       final pos = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
       final ll  = LatLng(pos.latitude, pos.longitude);
-
       final marks = await placemarkFromCoordinates(ll.latitude, ll.longitude);
-      if (marks.isNotEmpty) {
+      if (marks.isNotEmpty && mounted) {
         final p    = marks.first;
         final addr = '${p.street ?? ''}, ${p.subLocality ?? ''}, ${p.locality ?? ''}'
             .replaceAll(RegExp(r'^[,\s]+|[,\s]+$'), '');
-        if (mounted) {
-          setState(() {
-            _startController.text = addr;
-            _startLocation = _ResolvedLocation(address: addr, latLng: ll);
-          });
-          _mapController?.animateCamera(CameraUpdate.newLatLngZoom(ll, 13));
-          _refreshMapMarkersAndRoute();
-        }
+        setState(() {
+          _startController.text = addr;
+          _startLocation = _ResolvedLocation(address: addr, latLng: ll);
+        });
+        _mapController?.animateCamera(CameraUpdate.newLatLngZoom(ll, 13));
+        _refreshMapMarkersAndRoute();
       }
     } catch (_) {
     } finally {
@@ -112,30 +113,12 @@ class _OfferRideScreenState extends State<OfferRideScreen> {
     }
   }
 
-  // ── Pre-resolve default end location ─────────────────────────────
-  Future<void> _resolveAndSetEnd(String address) async {
-    try {
-      final locs = await locationFromAddress(address).timeout(const Duration(seconds: 5));
-      if (locs.isNotEmpty) {
-        final ll = LatLng(locs.first.latitude, locs.first.longitude);
-        if (mounted) {
-          setState(() => _endLocation = _ResolvedLocation(address: address, latLng: ll));
-          _refreshMapMarkersAndRoute();
-        }
-      }
-    } catch (_) {}
-  }
-
-  // ── Text change → debounced autocomplete ─────────────────────────
   void _onFieldChanged(String query, String fieldKey) {
     _debounce?.cancel();
     setState(() {
       _activeField  = fieldKey;
       _lastQuery    = query;
-      if (query.trim().length < 2) {
-        _suggestions = [];
-        return;
-      }
+      if (query.trim().length < 2) { _suggestions = []; return; }
     });
     if (query.trim().length < 2) return;
     _debounce = Timer(const Duration(milliseconds: 250), () {
@@ -146,40 +129,31 @@ class _OfferRideScreenState extends State<OfferRideScreen> {
   Future<void> _fetchSuggestions(String query, String fieldKey) async {
     if (!mounted) return;
     List<Map<String, dynamic>> results = [];
-
-    // Google Places Autocomplete
     try {
       final url = Uri.parse(
         'https://maps.googleapis.com/maps/api/place/autocomplete/json'
         '?input=${Uri.encodeComponent(query)}'
-        '&key=$_kGoogleApiKey'
-        '&language=en'
-        '&types=geocode',
+        '&key=$_kGoogleApiKey&language=en&types=geocode',
       );
       final resp = await http.get(url).timeout(const Duration(seconds: 4));
       if (resp.statusCode == 200) {
         final data        = jsonDecode(resp.body) as Map<String, dynamic>;
-        final status      = data['status'] as String? ?? '';
         final predictions = data['predictions'] as List<dynamic>? ?? [];
-        if (status == 'OK' && predictions.isNotEmpty) {
+        if (data['status'] == 'OK') {
           for (final pred in predictions.take(5)) {
-            results.add({
-              'name':    pred['description'] as String,
-              'placeId': pred['place_id']   as String?,
-            });
+            results.add({'name': pred['description'], 'placeId': pred['place_id']});
           }
         }
       }
     } catch (_) {}
 
-    // Geocoding fallback
     if (results.isEmpty) {
       try {
         final locs = await locationFromAddress(query).timeout(const Duration(seconds: 4));
         for (final loc in locs.take(5)) {
           final marks = await placemarkFromCoordinates(loc.latitude, loc.longitude);
           if (marks.isNotEmpty) {
-            final p    = marks.first;
+            final p = marks.first;
             final name = [p.name, p.locality, p.administrativeArea]
                 .where((s) => s != null && s.isNotEmpty).join(', ');
             results.add({'name': name.isEmpty ? query : name, 'placeId': null,
@@ -189,8 +163,7 @@ class _OfferRideScreenState extends State<OfferRideScreen> {
       } catch (_) {}
     }
 
-    if (!mounted) return;
-    if (_lastQuery != query || _activeField != fieldKey) return;
+    if (!mounted || _lastQuery != query || _activeField != fieldKey) return;
     setState(() => _suggestions = results);
   }
 
@@ -215,28 +188,19 @@ class _OfferRideScreenState extends State<OfferRideScreen> {
   Future<void> _selectSuggestion(Map<String, dynamic> s) async {
     final fieldKey = _activeField!;
     final name     = s['name'] as String;
+    setState(() { _suggestions = []; _activeField = null; });
 
-    // Immediately hide suggestions
-    setState(() {
-      _suggestions = [];
-      _activeField = null;
-    });
-
-    // Resolve LatLng
     LatLng? ll;
     if (s['placeId'] != null) ll = await _resolvePlaceId(s['placeId'] as String);
     if (ll == null && s['lat'] != null) ll = LatLng(s['lat'] as double, s['lng'] as double);
     if (ll == null || !mounted) return;
 
     final resolved = _ResolvedLocation(address: name, latLng: ll);
-
     setState(() {
       if (fieldKey == 'start') {
-        _startController.text = name;
-        _startLocation = resolved;
+        _startController.text = name; _startLocation = resolved;
       } else if (fieldKey == 'end') {
-        _endController.text = name;
-        _endLocation = resolved;
+        _endController.text = name; _endLocation = resolved;
       } else if (fieldKey.startsWith('stop_')) {
         final idx = int.tryParse(fieldKey.split('_')[1]);
         if (idx != null && idx < _stopControllers.length) {
@@ -246,14 +210,11 @@ class _OfferRideScreenState extends State<OfferRideScreen> {
         }
       }
     });
-
     _refreshMapMarkersAndRoute();
   }
 
-  // ── Rebuild markers + polyline whenever locations change ──────────
   Future<void> _refreshMapMarkersAndRoute() async {
     final newMarkers = <Marker>{};
-
     if (_startLocation != null) {
       newMarkers.add(Marker(
         markerId: const MarkerId('start'),
@@ -262,7 +223,6 @@ class _OfferRideScreenState extends State<OfferRideScreen> {
         infoWindow: InfoWindow(title: 'Start', snippet: _startLocation!.address),
       ));
     }
-
     for (int i = 0; i < _stopLocations.length; i++) {
       final stop = _stopLocations[i];
       if (stop != null) {
@@ -274,7 +234,6 @@ class _OfferRideScreenState extends State<OfferRideScreen> {
         ));
       }
     }
-
     if (_endLocation != null) {
       newMarkers.add(Marker(
         markerId: const MarkerId('end'),
@@ -283,39 +242,28 @@ class _OfferRideScreenState extends State<OfferRideScreen> {
         infoWindow: InfoWindow(title: 'End', snippet: _endLocation!.address),
       ));
     }
-
     setState(() => _markers = newMarkers);
-
-    // Draw route if at least start + end are known
     if (_startLocation != null && _endLocation != null) {
       await _drawRoute();
     } else if (_startLocation != null) {
-      _mapController?.animateCamera(
-          CameraUpdate.newLatLngZoom(_startLocation!.latLng, 13));
+      _mapController?.animateCamera(CameraUpdate.newLatLngZoom(_startLocation!.latLng, 13));
     }
   }
 
   Future<void> _drawRoute() async {
     if (_startLocation == null || _endLocation == null) return;
     setState(() => _isLoadingRoute = true);
-
-    // Build waypoints from resolved stops
-    final waypoints = _stopLocations
-        .whereType<_ResolvedLocation>()
-        .map((s) => '${s.latLng.latitude},${s.latLng.longitude}')
-        .join('|');
-
+    final waypoints = _stopLocations.whereType<_ResolvedLocation>()
+        .map((s) => '${s.latLng.latitude},${s.latLng.longitude}').join('|');
     try {
       final waypointParam = waypoints.isNotEmpty ? '&waypoints=$waypoints' : '';
       final url = Uri.parse(
         'https://maps.googleapis.com/maps/api/directions/json'
         '?origin=${_startLocation!.latLng.latitude},${_startLocation!.latLng.longitude}'
         '&destination=${_endLocation!.latLng.latitude},${_endLocation!.latLng.longitude}'
-        '$waypointParam'
-        '&key=$_kGoogleApiKey',
+        '$waypointParam&key=$_kGoogleApiKey',
       );
       final resp = await http.get(url).timeout(const Duration(seconds: 8));
-
       if (resp.statusCode == 200) {
         final data   = jsonDecode(resp.body) as Map<String, dynamic>;
         final routes = data['routes'] as List<dynamic>?;
@@ -327,11 +275,8 @@ class _OfferRideScreenState extends State<OfferRideScreen> {
               Polyline(
                 polylineId: const PolylineId('route'),
                 points: decoded,
-                color: AppTheme.primary,
-                width: 5,
-                startCap: Cap.roundCap,
-                endCap: Cap.roundCap,
-                jointType: JointType.round,
+                color: AppTheme.primary, width: 5,
+                startCap: Cap.roundCap, endCap: Cap.roundCap, jointType: JointType.round,
               ),
             };
           });
@@ -339,21 +284,13 @@ class _OfferRideScreenState extends State<OfferRideScreen> {
         }
       }
     } catch (_) {
-      // Fallback: straight line
       final allPoints = [
         _startLocation!.latLng,
         ..._stopLocations.whereType<_ResolvedLocation>().map((s) => s.latLng),
         _endLocation!.latLng,
       ];
       setState(() {
-        _polylines = {
-          Polyline(
-            polylineId: const PolylineId('route'),
-            points: allPoints,
-            color: AppTheme.primary,
-            width: 5,
-          ),
-        };
+        _polylines = {Polyline(polylineId: const PolylineId('route'), points: allPoints, color: AppTheme.primary, width: 5)};
       });
       _fitRouteOnMap(allPoints);
     } finally {
@@ -372,9 +309,7 @@ class _OfferRideScreenState extends State<OfferRideScreen> {
       if (p.longitude > maxLng) maxLng = p.longitude;
     }
     _mapController?.animateCamera(CameraUpdate.newLatLngBounds(
-      LatLngBounds(southwest: LatLng(minLat, minLng), northeast: LatLng(maxLat, maxLng)),
-      80,
-    ));
+      LatLngBounds(southwest: LatLng(minLat, minLng), northeast: LatLng(maxLat, maxLng)), 80));
   }
 
   List<LatLng> _decodePolyline(String encoded) {
@@ -392,7 +327,6 @@ class _OfferRideScreenState extends State<OfferRideScreen> {
     return pts;
   }
 
-  // ── Date/time picker ──────────────────────────────────────────────
   Future<void> _pickDateTime() async {
     final date = await showDatePicker(
       context: context,
@@ -400,37 +334,31 @@ class _OfferRideScreenState extends State<OfferRideScreen> {
       firstDate: DateTime.now(),
       lastDate: DateTime.now().add(const Duration(days: 14)),
       builder: (ctx, child) => Theme(
-        data: Theme.of(ctx).copyWith(
-            colorScheme: const ColorScheme.light(primary: AppTheme.primary)),
+        data: Theme.of(ctx).copyWith(colorScheme: const ColorScheme.light(primary: AppTheme.primary)),
         child: child!,
       ),
     );
     if (date == null || !mounted) return;
-
     final time = await showTimePicker(
       context: context,
       initialTime: TimeOfDay.fromDateTime(_departureTime),
       builder: (ctx, child) => Theme(
-        data: Theme.of(ctx).copyWith(
-            colorScheme: const ColorScheme.light(primary: AppTheme.primary)),
+        data: Theme.of(ctx).copyWith(colorScheme: const ColorScheme.light(primary: AppTheme.primary)),
         child: child!,
       ),
     );
     if (time == null) return;
-
     setState(() {
       _departureTime = DateTime(date.year, date.month, date.day, time.hour, time.minute);
     });
   }
 
-  // ── Publish to backend ────────────────────────────────────────────
   Future<void> _publishRide() async {
     setState(() => _isLoading = true);
     try {
       final user = await AuthService().getCurrentUserProfile();
       if (user == null) throw Exception('User not found');
 
-      // Build stops list from resolved locations
       final stops = <LocationPoint>[];
       for (int i = 0; i < _stopControllers.length; i++) {
         final text = _stopControllers[i].text.trim();
@@ -448,6 +376,7 @@ class _OfferRideScreenState extends State<OfferRideScreen> {
         driverId:     user.uid,
         driverName:   user.name,
         driverPhoto:  user.photoUrl,
+        driverPhone:  user.phone,        // FIX: phone save karo
         driverRating: user.rating,
         startPoint: LocationPoint(
           address: _startController.text.trim(),
@@ -464,6 +393,7 @@ class _OfferRideScreenState extends State<OfferRideScreen> {
         totalSeats:     _totalSeats,
         availableSeats: _totalSeats,
         status:         'upcoming',
+        rideType:       _selectedRideType,  // FIX: selected type save karo
         notes: _notesController.text.trim().isEmpty ? null : _notesController.text.trim(),
         createdAt: DateTime.now(),
       );
@@ -471,20 +401,14 @@ class _OfferRideScreenState extends State<OfferRideScreen> {
       final rideId = await RideService().createRide(ride);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Ride published successfully!'),
-            backgroundColor: AppTheme.success,
-          ),
+          const SnackBar(content: Text('Ride published!'), backgroundColor: AppTheme.success),
         );
         context.push('/ride/$rideId/requests');
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: ${e.toString()}'),
-            backgroundColor: AppTheme.error,
-          ),
+          SnackBar(content: Text('Error: $e'), backgroundColor: AppTheme.error),
         );
       }
     } finally {
@@ -492,14 +416,11 @@ class _OfferRideScreenState extends State<OfferRideScreen> {
     }
   }
 
-  // ─────────────────────────────────────────────────────────────────
-  // ── Step 1: Route setup with map ─────────────────────────────────
-  // ─────────────────────────────────────────────────────────────────
+  // ── Step 1: Route ───────────────────────────────────────────────
   Widget _buildStep1() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Map preview card
         ClipRRect(
           borderRadius: BorderRadius.circular(16),
           child: SizedBox(
@@ -517,51 +438,33 @@ class _OfferRideScreenState extends State<OfferRideScreen> {
                       c.animateCamera(CameraUpdate.newLatLngZoom(_startLocation!.latLng, 13));
                     }
                   },
-                  markers:          _markers,
-                  polylines:        _polylines,
-                  zoomControlsEnabled:   false,
-                  mapToolbarEnabled:     false,
-                  myLocationEnabled:     true,
-                  myLocationButtonEnabled: false,
-                  scrollGesturesEnabled: true,
-                  zoomGesturesEnabled:   true,
+                  markers: _markers, polylines: _polylines,
+                  zoomControlsEnabled: false, mapToolbarEnabled: false,
+                  myLocationEnabled: true, myLocationButtonEnabled: false,
                 ),
-                // Route loading overlay
                 if (_isLoadingRoute)
-                  Positioned(
-                    bottom: 12, left: 0, right: 0,
-                    child: Center(
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(20),
-                          boxShadow: [const BoxShadow(color: Colors.black12, blurRadius: 8)],
-                        ),
-                        child: const Row(mainAxisSize: MainAxisSize.min, children: [
-                          SizedBox(width: 12, height: 12,
-                              child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.primary)),
-                          SizedBox(width: 8),
-                          Text('Drawing route...', style: TextStyle(fontSize: 11)),
-                        ]),
-                      ),
-                    ),
+                  Positioned(bottom: 12, left: 0, right: 0,
+                    child: Center(child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20),
+                          boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 8)]),
+                      child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                        SizedBox(width: 12, height: 12,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.primary)),
+                        SizedBox(width: 8),
+                        Text('Drawing route...', style: TextStyle(fontSize: 11)),
+                      ]),
+                    )),
                   ),
-                // My location FAB
-                Positioned(
-                  right: 10, top: 10,
+                Positioned(right: 10, top: 10,
                   child: GestureDetector(
                     onTap: _getCurrentLocation,
                     child: Container(
                       width: 36, height: 36,
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        shape: BoxShape.circle,
-                        boxShadow: [const BoxShadow(color: Colors.black12, blurRadius: 6)],
-                      ),
+                      decoration: BoxDecoration(color: Colors.white, shape: BoxShape.circle,
+                          boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 6)]),
                       child: _isLoadingLocation
-                          ? const Padding(
-                              padding: EdgeInsets.all(8),
+                          ? const Padding(padding: EdgeInsets.all(8),
                               child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.primary))
                           : const Icon(Icons.my_location, color: AppTheme.primary, size: 18),
                     ),
@@ -571,10 +474,7 @@ class _OfferRideScreenState extends State<OfferRideScreen> {
             ),
           ),
         ),
-
         const SizedBox(height: 20),
-
-        // ── Start location ──────────────────────────────────────────
         _FieldLabel(label: 'Start Location', icon: Icons.radio_button_checked, color: AppTheme.success),
         const SizedBox(height: 8),
         _LocationInputField(
@@ -584,70 +484,51 @@ class _OfferRideScreenState extends State<OfferRideScreen> {
           trailing: IconButton(
             icon: const Icon(Icons.my_location, size: 18, color: AppTheme.primary),
             onPressed: _getCurrentLocation,
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(),
+            padding: EdgeInsets.zero, constraints: const BoxConstraints(),
           ),
           validator: (v) => v == null || v.isEmpty ? 'Start location required' : null,
         ),
         if (_activeField == 'start' && _suggestions.isNotEmpty)
-          _SuggestionDropdown(
-            suggestions: _suggestions,
-            onSelect: _selectSuggestion,
-          ),
+          _SuggestionDropdown(suggestions: _suggestions, onSelect: _selectSuggestion),
 
         const SizedBox(height: 16),
 
-        // ── Intermediate stops ──────────────────────────────────────
         if (_stopControllers.isNotEmpty) ...[
           _FieldLabel(label: 'Stops (optional)', icon: Icons.add_location_alt_outlined, color: AppTheme.textLight),
           const SizedBox(height: 8),
           ..._stopControllers.asMap().entries.map((e) {
-            final i      = e.key;
+            final i       = e.key;
             final stopKey = 'stop_$i';
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: _LocationInputField(
-                          controller: e.value,
-                          hint: 'Stop ${i + 1}',
-                          onChanged: (q) => _onFieldChanged(q, stopKey),
-                          validator: null,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      GestureDetector(
-                        onTap: () => setState(() {
-                          e.value.dispose();
-                          _stopControllers.removeAt(i);
-                          if (i < _stopLocations.length) _stopLocations.removeAt(i);
-                          _refreshMapMarkersAndRoute();
-                        }),
-                        child: Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFFEF2F2),
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: const Icon(Icons.close, color: AppTheme.error, size: 18),
-                        ),
-                      ),
-                    ],
+            return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: Row(children: [
+                  Expanded(child: _LocationInputField(
+                    controller: e.value,
+                    hint: 'Stop ${i + 1}',
+                    onChanged: (q) => _onFieldChanged(q, stopKey),
+                    validator: null,
+                  )),
+                  const SizedBox(width: 8),
+                  GestureDetector(
+                    onTap: () => setState(() {
+                      e.value.dispose();
+                      _stopControllers.removeAt(i);
+                      if (i < _stopLocations.length) _stopLocations.removeAt(i);
+                      _refreshMapMarkersAndRoute();
+                    }),
+                    child: Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(color: const Color(0xFFFEF2F2), borderRadius: BorderRadius.circular(10)),
+                      child: const Icon(Icons.close, color: AppTheme.error, size: 18),
+                    ),
                   ),
-                ),
-                if (_activeField == stopKey && _suggestions.isNotEmpty)
-                  _SuggestionDropdown(
-                    suggestions: _suggestions,
-                    onSelect: _selectSuggestion,
-                  ),
-              ],
-            );
+                ]),
+              ),
+              if (_activeField == stopKey && _suggestions.isNotEmpty)
+                _SuggestionDropdown(suggestions: _suggestions, onSelect: _selectSuggestion),
+            ]);
           }),
-          const SizedBox(height: 4),
         ],
 
         TextButton.icon(
@@ -663,8 +544,6 @@ class _OfferRideScreenState extends State<OfferRideScreen> {
         ),
 
         const SizedBox(height: 8),
-
-        // ── End location ────────────────────────────────────────────
         _FieldLabel(label: 'End Location', icon: Icons.location_on, color: AppTheme.error),
         const SizedBox(height: 8),
         _LocationInputField(
@@ -674,21 +553,56 @@ class _OfferRideScreenState extends State<OfferRideScreen> {
           validator: (v) => v == null || v.isEmpty ? 'End location required' : null,
         ),
         if (_activeField == 'end' && _suggestions.isNotEmpty)
-          _SuggestionDropdown(
-            suggestions: _suggestions,
-            onSelect: _selectSuggestion,
-          ),
+          _SuggestionDropdown(suggestions: _suggestions, onSelect: _selectSuggestion),
       ],
     );
   }
 
-  // ─────────────────────────────────────────────────────────────────
-  // ── Step 2: Ride details ──────────────────────────────────────────
-  // ─────────────────────────────────────────────────────────────────
+  // ── Step 2: Ride details ─────────────────────────────────────────
   Widget _buildStep2() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // FIX: Ride type selection with asset images
+        const Text('Ride Type',
+            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: AppTheme.textDark)),
+        const SizedBox(height: 12),
+        Row(
+          children: _rideTypes.map((rt) {
+            final selected = _selectedRideType == rt['id'];
+            return Expanded(
+              child: GestureDetector(
+                onTap: () => setState(() => _selectedRideType = rt['id']!),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  margin: const EdgeInsets.only(right: 8),
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: selected ? AppTheme.primary.withOpacity(0.08) : AppTheme.bgLight,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: selected ? AppTheme.primary : AppTheme.border,
+                      width: selected ? 2 : 1,
+                    ),
+                  ),
+                  child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                    Image.asset(rt['asset']!, height: 44, fit: BoxFit.contain,
+                        errorBuilder: (_, __, ___) => Icon(Icons.directions_car, size: 36,
+                            color: selected ? AppTheme.primary : AppTheme.textMedium)),
+                    const SizedBox(height: 4),
+                    Text(rt['label']!, style: TextStyle(
+                        fontSize: 12, fontWeight: FontWeight.w700,
+                        color: selected ? AppTheme.primary : AppTheme.textDark)),
+                    Text(rt['desc']!, style: const TextStyle(fontSize: 9, color: AppTheme.textLight),
+                        textAlign: TextAlign.center),
+                  ]),
+                ),
+              ),
+            );
+          }).toList(),
+        ),
+
+        const SizedBox(height: 24),
         const Text('Departure Time',
             style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: AppTheme.textDark)),
         const SizedBox(height: 8),
@@ -697,24 +611,18 @@ class _OfferRideScreenState extends State<OfferRideScreen> {
           child: Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: AppTheme.bgWhite,
-              borderRadius: BorderRadius.circular(12),
+              color: AppTheme.bgWhite, borderRadius: BorderRadius.circular(12),
               border: Border.all(color: AppTheme.border),
             ),
-            child: Row(
-              children: [
-                const Icon(Icons.access_time_rounded, color: AppTheme.primary, size: 20),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    DateFormat('EEE, MMM d • h:mm a').format(_departureTime),
-                    style: const TextStyle(
-                        fontSize: 15, fontWeight: FontWeight.w500, color: AppTheme.textDark),
-                  ),
-                ),
-                const Icon(Icons.edit_outlined, color: AppTheme.textLight, size: 18),
-              ],
-            ),
+            child: Row(children: [
+              const Icon(Icons.access_time_rounded, color: AppTheme.primary, size: 20),
+              const SizedBox(width: 12),
+              Expanded(child: Text(
+                DateFormat('EEE, MMM d • h:mm a').format(_departureTime),
+                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500, color: AppTheme.textDark),
+              )),
+              const Icon(Icons.edit_outlined, color: AppTheme.textLight, size: 18),
+            ]),
           ),
         ),
 
@@ -722,26 +630,16 @@ class _OfferRideScreenState extends State<OfferRideScreen> {
         const Text('Available Seats',
             style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: AppTheme.textDark)),
         const SizedBox(height: 16),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            _SeatButton(
-              icon: Icons.remove,
-              onTap: _totalSeats > 1 ? () => setState(() => _totalSeats--) : null,
-            ),
-            const SizedBox(width: 28),
-            Column(children: [
-              Text('$_totalSeats',
-                  style: const TextStyle(fontSize: 44, fontWeight: FontWeight.w700, color: AppTheme.primary)),
-              const Text('seats', style: TextStyle(color: AppTheme.textMedium, fontSize: 13)),
-            ]),
-            const SizedBox(width: 28),
-            _SeatButton(
-              icon: Icons.add,
-              onTap: _totalSeats < 6 ? () => setState(() => _totalSeats++) : null,
-            ),
-          ],
-        ),
+        Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+          _SeatButton(icon: Icons.remove, onTap: _totalSeats > 1 ? () => setState(() => _totalSeats--) : null),
+          const SizedBox(width: 28),
+          Column(children: [
+            Text('$_totalSeats', style: const TextStyle(fontSize: 44, fontWeight: FontWeight.w700, color: AppTheme.primary)),
+            const Text('seats', style: TextStyle(color: AppTheme.textMedium, fontSize: 13)),
+          ]),
+          const SizedBox(width: 28),
+          _SeatButton(icon: Icons.add, onTap: _totalSeats < 6 ? () => setState(() => _totalSeats++) : null),
+        ]),
 
         const SizedBox(height: 24),
         const Text('Notes (optional)',
@@ -759,23 +657,19 @@ class _OfferRideScreenState extends State<OfferRideScreen> {
     );
   }
 
-  // ─────────────────────────────────────────────────────────────────
-  // ── Step 3: Review ────────────────────────────────────────────────
-  // ─────────────────────────────────────────────────────────────────
+  // ── Step 3: Review ───────────────────────────────────────────────
   Widget _buildReview() {
+    final rtInfo = _rideTypes.firstWhere((r) => r['id'] == _selectedRideType, orElse: () => _rideTypes.first);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Mini map showing final route
         ClipRRect(
           borderRadius: BorderRadius.circular(16),
           child: SizedBox(
             height: 180,
             child: GoogleMap(
               initialCameraPosition: CameraPosition(
-                target: _startLocation?.latLng ?? const LatLng(31.5204, 74.3587),
-                zoom: 12,
-              ),
+                target: _startLocation?.latLng ?? const LatLng(31.5204, 74.3587), zoom: 12),
               onMapCreated: (c) {
                 _mapController = c;
                 if (_polylines.isNotEmpty) {
@@ -783,316 +677,211 @@ class _OfferRideScreenState extends State<OfferRideScreen> {
                   if (pts.isNotEmpty) _fitRouteOnMap(pts);
                 }
               },
-              markers:               _markers,
-              polylines:             _polylines,
-              zoomControlsEnabled:   false,
-              mapToolbarEnabled:     false,
-              myLocationEnabled:     false,
-              myLocationButtonEnabled: false,
-              scrollGesturesEnabled: false,
-              zoomGesturesEnabled:   false,
+              markers: _markers, polylines: _polylines,
+              zoomControlsEnabled: false, mapToolbarEnabled: false,
+              myLocationEnabled: false, scrollGesturesEnabled: false, zoomGesturesEnabled: false,
             ),
           ),
         ),
-
         const SizedBox(height: 20),
         const Text('Review your ride',
             style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: AppTheme.textDark)),
         const SizedBox(height: 16),
-
-        _ReviewRow(label: 'From', value: _startController.text),
+        _ReviewRow(label: 'Type',      value: rtInfo['label']!),
+        _ReviewRow(label: 'From',      value: _startController.text),
         if (_stopControllers.any((c) => c.text.isNotEmpty))
-          _ReviewRow(
-            label: 'Stops',
-            value: _stopControllers.where((c) => c.text.isNotEmpty).map((c) => c.text).join(', '),
-          ),
-        _ReviewRow(label: 'To', value: _endController.text),
+          _ReviewRow(label: 'Stops', value: _stopControllers.where((c) => c.text.isNotEmpty).map((c) => c.text).join(', ')),
+        _ReviewRow(label: 'To',        value: _endController.text),
         _ReviewRow(label: 'Departure', value: DateFormat('EEE, MMM d • h:mm a').format(_departureTime)),
-        _ReviewRow(label: 'Seats', value: '$_totalSeats seats available'),
+        _ReviewRow(label: 'Seats',     value: '$_totalSeats seats available'),
         if (_notesController.text.isNotEmpty)
           _ReviewRow(label: 'Notes', value: _notesController.text),
-
         const SizedBox(height: 16),
         Container(
           padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: AppTheme.primaryLight,
-            borderRadius: BorderRadius.circular(12),
-          ),
+          decoration: BoxDecoration(color: AppTheme.primaryLight, borderRadius: BorderRadius.circular(12)),
           child: const Row(children: [
             Icon(Icons.info_outline, color: AppTheme.primary, size: 18),
             SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                'Once published, colleagues can find and book your ride. You can manage requests from the ride page.',
-                style: TextStyle(fontSize: 12, color: AppTheme.primary, height: 1.5),
-              ),
-            ),
+            Expanded(child: Text(
+              'Once published, colleagues can find and book your ride.',
+              style: TextStyle(fontSize: 12, color: AppTheme.primary, height: 1.5),
+            )),
           ]),
         ),
       ],
     );
   }
 
-  // ─────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     final stepLabels = ['Set Route', 'Ride Details', 'Review & Publish'];
-
     return GestureDetector(
-      // Tap anywhere outside a field hides suggestions
-      onTap: () {
-        FocusScope.of(context).unfocus();
-        setState(() { _activeField = null; _suggestions = []; });
-      },
+      onTap: () { FocusScope.of(context).unfocus(); setState(() { _activeField = null; _suggestions = []; }); },
       child: Scaffold(
         backgroundColor: AppTheme.bgLight,
         appBar: AppBar(
           title: Text(stepLabels[_step]),
           leading: _step > 0
-              ? IconButton(
-                  icon: const Icon(Icons.arrow_back_ios_new, size: 18),
-                  onPressed: () => setState(() => _step--),
-                )
+              ? IconButton(icon: const Icon(Icons.arrow_back_ios_new, size: 18),
+                  onPressed: () => setState(() => _step--))
               : null,
         ),
         body: Form(
           key: _formKey,
-          child: Column(
-            children: [
-              // Step progress bar
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
-                child: Row(
-                  children: List.generate(3, (i) => Expanded(
-                    child: Container(
-                      margin: EdgeInsets.only(right: i < 2 ? 8 : 0),
-                      height: 4,
-                      decoration: BoxDecoration(
-                        color: i <= _step ? AppTheme.primary : AppTheme.border,
-                        borderRadius: BorderRadius.circular(2),
-                      ),
+          child: Column(children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+              child: Row(
+                children: List.generate(3, (i) => Expanded(
+                  child: Container(
+                    margin: EdgeInsets.only(right: i < 2 ? 8 : 0),
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: i <= _step ? AppTheme.primary : AppTheme.border,
+                      borderRadius: BorderRadius.circular(2),
                     ),
-                  )),
-                ),
-              ),
-
-              Expanded(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.all(20),
-                  child: _step == 0
-                      ? _buildStep1()
-                      : _step == 1
-                          ? _buildStep2()
-                          : _buildReview(),
-                ),
-              ),
-
-              // Bottom action button
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
-                child: SizedBox(
-                  width: double.infinity,
-                  height: 52,
-                  child: ElevatedButton(
-                    onPressed: _isLoading ? null : () {
-                      if (_step < 2) {
-                        if (_formKey.currentState!.validate()) {
-                          setState(() {
-                            _activeField = null;
-                            _suggestions = [];
-                            _step++;
-                          });
-                        }
-                      } else {
-                        _publishRide();
-                      }
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppTheme.primary,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                    ),
-                    child: _isLoading
-                        ? const SizedBox(height: 20, width: 20,
-                            child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5))
-                        : Text(
-                            _step < 2 ? 'Continue' : 'Publish Ride',
-                            style: const TextStyle(
-                                fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white),
-                          ),
                   ),
+                )),
+              ),
+            ),
+            Expanded(child: SingleChildScrollView(
+              padding: const EdgeInsets.all(20),
+              child: _step == 0 ? _buildStep1() : _step == 1 ? _buildStep2() : _buildReview(),
+            )),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+              child: SizedBox(
+                width: double.infinity, height: 52,
+                child: ElevatedButton(
+                  onPressed: _isLoading ? null : () {
+                    if (_step < 2) {
+                      if (_formKey.currentState!.validate()) {
+                        setState(() { _activeField = null; _suggestions = []; _step++; });
+                      }
+                    } else {
+                      _publishRide();
+                    }
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.primary,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  ),
+                  child: _isLoading
+                      ? const SizedBox(height: 20, width: 20,
+                          child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5))
+                      : Text(_step < 2 ? 'Continue' : 'Publish Ride',
+                          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white)),
                 ),
               ),
-            ],
-          ),
+            ),
+          ]),
         ),
       ),
     );
   }
 }
 
-// ── Reusable field label with icon ────────────────────────────────
+// ─── Helper widgets ───────────────────────────────────────────────
 class _FieldLabel extends StatelessWidget {
-  final String label;
-  final IconData icon;
-  final Color color;
+  final String label; final IconData icon; final Color color;
   const _FieldLabel({required this.label, required this.icon, required this.color});
-
   @override
-  Widget build(BuildContext context) {
-    return Row(children: [
-      Icon(icon, size: 14, color: color),
-      const SizedBox(width: 6),
-      Text(label, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: AppTheme.textDark)),
-    ]);
-  }
+  Widget build(BuildContext context) => Row(children: [
+    Icon(icon, size: 14, color: color), const SizedBox(width: 6),
+    Text(label, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: AppTheme.textDark)),
+  ]);
 }
 
-// ── Location input with consistent styling ────────────────────────
 class _LocationInputField extends StatelessWidget {
   final TextEditingController controller;
   final String hint;
   final ValueChanged<String> onChanged;
   final FormFieldValidator<String>? validator;
   final Widget? trailing;
-
-  const _LocationInputField({
-    required this.controller,
-    required this.hint,
-    required this.onChanged,
-    required this.validator,
-    this.trailing,
-  });
-
+  const _LocationInputField({required this.controller, required this.hint, required this.onChanged, required this.validator, this.trailing});
   @override
-  Widget build(BuildContext context) {
-    return TextFormField(
-      controller: controller,
-      onChanged: onChanged,
-      validator: validator,
-      style: const TextStyle(fontSize: 15, color: AppTheme.textDark),
-      decoration: InputDecoration(
-        hintText: hint,
+  Widget build(BuildContext context) => TextFormField(
+    controller: controller, onChanged: onChanged, validator: validator,
+    style: const TextStyle(fontSize: 15, color: AppTheme.textDark),
+    decoration: InputDecoration(hintText: hint, suffixIcon: trailing,
         hintStyle: const TextStyle(color: AppTheme.textLight, fontSize: 15),
-        suffixIcon: trailing,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      ),
-    );
-  }
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14)),
+  );
 }
 
-// ── Suggestions dropdown ──────────────────────────────────────────
 class _SuggestionDropdown extends StatelessWidget {
   final List<Map<String, dynamic>> suggestions;
   final ValueChanged<Map<String, dynamic>> onSelect;
   const _SuggestionDropdown({required this.suggestions, required this.onSelect});
-
   @override
   Widget build(BuildContext context) {
     return Container(
       margin: const EdgeInsets.only(top: 4, bottom: 8),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 12, offset: const Offset(0, 4)),
-        ],
-        border: Border.all(color: AppTheme.border),
-      ),
-      child: Column(
-        children: suggestions.asMap().entries.map((entry) {
-          final i       = entry.key;
-          final s       = entry.value;
-          final isFirst = i == 0;
-          final isLast  = i == suggestions.length - 1;
-          return InkWell(
-            onTap: () => onSelect(s),
-            borderRadius: BorderRadius.only(
-              topLeft:     Radius.circular(isFirst ? 12 : 0),
-              topRight:    Radius.circular(isFirst ? 12 : 0),
-              bottomLeft:  Radius.circular(isLast  ? 12 : 0),
-              bottomRight: Radius.circular(isLast  ? 12 : 0),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-              child: Row(children: [
-                Container(
-                  width: 30, height: 30,
-                  decoration: BoxDecoration(color: AppTheme.bgLight, borderRadius: BorderRadius.circular(8)),
-                  child: const Icon(Icons.location_on_outlined, size: 15, color: AppTheme.primary),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(s['name'] as String,
-                      style: const TextStyle(fontSize: 13, color: AppTheme.textDark),
-                      maxLines: 2, overflow: TextOverflow.ellipsis),
-                ),
-              ]),
-            ),
-          );
-        }).toList(),
-      ),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12),
+          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 12, offset: const Offset(0, 4))],
+          border: Border.all(color: AppTheme.border)),
+      child: Column(children: suggestions.asMap().entries.map((entry) {
+        final i = entry.key; final s = entry.value;
+        final isFirst = i == 0; final isLast = i == suggestions.length - 1;
+        return InkWell(
+          onTap: () => onSelect(s),
+          borderRadius: BorderRadius.only(
+            topLeft: Radius.circular(isFirst ? 12 : 0), topRight: Radius.circular(isFirst ? 12 : 0),
+            bottomLeft: Radius.circular(isLast ? 12 : 0), bottomRight: Radius.circular(isLast ? 12 : 0),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            child: Row(children: [
+              Container(width: 30, height: 30,
+                decoration: BoxDecoration(color: AppTheme.bgLight, borderRadius: BorderRadius.circular(8)),
+                child: const Icon(Icons.location_on_outlined, size: 15, color: AppTheme.primary)),
+              const SizedBox(width: 12),
+              Expanded(child: Text(s['name'] as String,
+                  style: const TextStyle(fontSize: 13, color: AppTheme.textDark),
+                  maxLines: 2, overflow: TextOverflow.ellipsis)),
+            ]),
+          ),
+        );
+      }).toList()),
     );
   }
 }
 
-// ── Seat +/- button ───────────────────────────────────────────────
 class _SeatButton extends StatelessWidget {
-  final IconData icon;
-  final VoidCallback? onTap;
+  final IconData icon; final VoidCallback? onTap;
   const _SeatButton({required this.icon, this.onTap});
-
   @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        width: 48, height: 48,
-        decoration: BoxDecoration(
-          color: onTap != null ? AppTheme.primaryLight : AppTheme.bgLight,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: onTap != null ? AppTheme.primary : AppTheme.border),
-        ),
-        child: Icon(icon, color: onTap != null ? AppTheme.primary : AppTheme.textLight, size: 22),
+  Widget build(BuildContext context) => GestureDetector(
+    onTap: onTap,
+    child: AnimatedContainer(
+      duration: const Duration(milliseconds: 150),
+      width: 48, height: 48,
+      decoration: BoxDecoration(
+        color: onTap != null ? AppTheme.primaryLight : AppTheme.bgLight,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: onTap != null ? AppTheme.primary : AppTheme.border),
       ),
-    );
-  }
+      child: Icon(icon, color: onTap != null ? AppTheme.primary : AppTheme.textLight, size: 22),
+    ),
+  );
 }
 
-// ── Review row ────────────────────────────────────────────────────
 class _ReviewRow extends StatelessWidget {
-  final String label;
-  final String value;
+  final String label; final String value;
   const _ReviewRow({required this.label, required this.value});
-
   @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: AppTheme.bgWhite,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: AppTheme.border),
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SizedBox(
-              width: 80,
-              child: Text(label,
-                  style: const TextStyle(fontSize: 13, color: AppTheme.textMedium)),
-            ),
-            Expanded(
-              child: Text(value,
-                  style: const TextStyle(
-                      fontSize: 13, fontWeight: FontWeight.w500, color: AppTheme.textDark)),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(bottom: 12),
+    child: Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(color: AppTheme.bgWhite, borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: AppTheme.border)),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        SizedBox(width: 80, child: Text(label, style: const TextStyle(fontSize: 13, color: AppTheme.textMedium))),
+        Expanded(child: Text(value,
+            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: AppTheme.textDark))),
+      ]),
+    ),
+  );
 }

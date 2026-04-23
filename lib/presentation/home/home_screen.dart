@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../core/theme/app_theme.dart';
 import '../../data/services/auth_service.dart';
 import '../../data/services/ride_service.dart';
@@ -31,7 +33,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Future<void> _loadData() async {
     setState(() => _loadingRides = true);
     final user = await _authService.getCurrentUserProfile();
-    final rides = await _rideService.searchRides(date: DateTime.now());
+    // Exclude current user's own rides from dashboard
+    final currentUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final rides = await _rideService.searchRides(
+      date: DateTime.now(),
+      excludeDriverId: currentUid,
+    );
     if (mounted) {
       setState(() {
         _user = user;
@@ -92,18 +99,61 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                             ],
                           ),
                         ),
+                        // Notification bell
+                        Stack(
+                          children: [
+                            IconButton(
+                              onPressed: () => context.push('/notifications'),
+                              icon: const Icon(Icons.notifications_outlined,
+                                  color: Colors.white, size: 24),
+                            ),
+                            StreamBuilder<QuerySnapshot>(
+                              stream: FirebaseFirestore.instance
+                                  .collection('notifications')
+                                  .where('userId', isEqualTo: FirebaseAuth.instance.currentUser?.uid ?? '')
+                                  .where('isRead', isEqualTo: false)
+                                  .snapshots(),
+                              builder: (_, snap) {
+                                final count = snap.data?.docs.length ?? 0;
+                                if (count == 0) return const SizedBox.shrink();
+                                return Positioned(
+                                  right: 6, top: 6,
+                                  child: Container(
+                                    width: 16, height: 16,
+                                    decoration: const BoxDecoration(
+                                      color: Colors.red, shape: BoxShape.circle),
+                                    child: Center(
+                                      child: Text(
+                                        count > 9 ? '9+' : '$count',
+                                        style: const TextStyle(
+                                            color: Colors.white, fontSize: 9,
+                                            fontWeight: FontWeight.w700),
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                          ],
+                        ),
+                        const SizedBox(width: 4),
                         GestureDetector(
                           onTap: () => context.go('/profile'),
                           child: CircleAvatar(
                             radius: 22,
                             backgroundColor: Colors.white.withOpacity(0.2),
-                            child: Text(
-                              _user?.name.substring(0, 1).toUpperCase() ?? 'U',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
+                            backgroundImage: _user?.photoUrl != null
+                                ? NetworkImage(_user!.photoUrl!)
+                                : null,
+                            child: _user?.photoUrl == null
+                                ? Text(
+                                    _user?.name.substring(0, 1).toUpperCase() ?? 'U',
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  )
+                                : null,
                           ),
                         ),
                       ],
@@ -242,6 +292,14 @@ class _RideCard extends StatelessWidget {
   final RideModel ride;
   const _RideCard({required this.ride});
 
+  String _rideTypeLabel(String type) {
+    switch (type) {
+      case 'comfort': return 'Comfort';
+      case 'premium': return 'Premium';
+      default:        return 'Economy';
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
@@ -255,21 +313,36 @@ class _RideCard extends StatelessWidget {
         ),
         child: Row(
           children: [
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: AppTheme.primaryLight,
-                borderRadius: BorderRadius.circular(10),
+            // Ride type image
+            ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: Image.asset(
+                ride.rideType == 'comfort'
+                    ? 'assets/images/comfort.JPG'
+                    : ride.rideType == 'premium'
+                        ? 'assets/images/premium.AVIF'
+                        : 'assets/images/economy.JPG',
+                width: 52,
+                height: 52,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => Container(
+                  width: 52, height: 52,
+                  decoration: BoxDecoration(
+                    color: AppTheme.primaryLight,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(Icons.directions_car, color: AppTheme.primary, size: 26),
+                ),
               ),
-              child: const Icon(Icons.directions_car, color: AppTheme.primary, size: 22),
             ),
             const SizedBox(width: 14),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // FROM → TO (real addresses)
                   Text(
-                    '${ride.startPoint.address.split(',').first} → Office',
+                    '${ride.startPoint.address.split(',').first} → ${ride.endPoint.address.split(',').first}',
                     style: const TextStyle(
                       fontWeight: FontWeight.w600, color: AppTheme.textDark, fontSize: 14),
                     maxLines: 1,
@@ -285,6 +358,11 @@ class _RideCard extends StatelessWidget {
                         style: const TextStyle(fontSize: 12, color: AppTheme.textMedium),
                       ),
                     ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    _rideTypeLabel(ride.rideType),
+                    style: const TextStyle(fontSize: 11, color: AppTheme.textLight),
                   ),
                 ],
               ),

@@ -1,109 +1,65 @@
-// lib/presentation/profile/notifications_screen.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart';
 import '../../core/theme/app_theme.dart';
 
-class NotificationsScreen extends StatefulWidget {
+class NotificationsScreen extends StatelessWidget {
   const NotificationsScreen({super.key});
-  @override
-  State<NotificationsScreen> createState() => _NotificationsScreenState();
-}
 
-class _NotificationsScreenState extends State<NotificationsScreen> {
-  final _uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+  String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
 
-  // Toggle states
-  bool _pushEnabled    = true;
-  bool _rideRequests   = true;
-  bool _rideAccepted   = true;
-  bool _rideReminders  = true;
-  bool _rideUpdates    = false;
-  bool _promotions     = false;
+  // FIX: notifications collection, userId field se filter
+  Stream<List<Map<String, dynamic>>> get _notifStream =>
+      FirebaseFirestore.instance
+          .collection('notifications')
+          .where('userId', isEqualTo: FirebaseAuth.instance.currentUser?.uid ?? '')
+          .snapshots()
+          .map((s) {
+            final docs = s.docs.map((d) => {'id': d.id, ...d.data()}).toList();
+            // Client-side sort (no composite index needed)
+            docs.sort((a, b) {
+              final ta = a['createdAt'] as String? ?? '';
+              final tb = b['createdAt'] as String? ?? '';
+              return tb.compareTo(ta); // newest first
+            });
+            return docs;
+          });
 
-  bool _isSaving = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadPrefs();
+  Future<void> _markRead(String notifId) async {
+    await FirebaseFirestore.instance
+        .collection('notifications')
+        .doc(notifId)
+        .update({'isRead': true});
   }
 
-  // ── Load saved preferences from Firestore ─────────────────────
-  Future<void> _loadPrefs() async {
-    try {
-      final doc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(_uid)
-          .get();
-      final prefs = doc.data()?['notificationPrefs'] as Map<String, dynamic>?;
-      if (prefs != null && mounted) {
-        setState(() {
-          _pushEnabled   = prefs['pushEnabled']   ?? true;
-          _rideRequests  = prefs['rideRequests']  ?? true;
-          _rideAccepted  = prefs['rideAccepted']  ?? true;
-          _rideReminders = prefs['rideReminders'] ?? true;
-          _rideUpdates   = prefs['rideUpdates']   ?? false;
-          _promotions    = prefs['promotions']    ?? false;
-        });
-      }
-    } catch (_) {}
-  }
-
-  // ── Save prefs + FCM token to Firestore ───────────────────────
-  Future<void> _savePrefs() async {
-    setState(() => _isSaving = true);
-    try {
-      // Request permission & get FCM token
-      String? fcmToken;
-      if (_pushEnabled) {
-        final settings = await FirebaseMessaging.instance.requestPermission();
-        if (settings.authorizationStatus == AuthorizationStatus.authorized) {
-          fcmToken = await FirebaseMessaging.instance.getToken();
-        }
-      }
-
-      await FirebaseFirestore.instance
-          .collection('users')
-          .doc(_uid)
-          .update({
-        'notificationPrefs': {
-          'pushEnabled':   _pushEnabled,
-          'rideRequests':  _rideRequests,
-          'rideAccepted':  _rideAccepted,
-          'rideReminders': _rideReminders,
-          'rideUpdates':   _rideUpdates,
-          'promotions':    _promotions,
-        },
-        // Save/clear FCM token
-        if (fcmToken != null)  'fcmToken': fcmToken,
-        if (!_pushEnabled)     'fcmToken': FieldValue.delete(),
-      });
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Preferences saved'),
-            backgroundColor: AppTheme.success,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: $e'),
-            backgroundColor: AppTheme.error,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isSaving = false);
+  Future<void> _markAllRead(BuildContext context) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final snap = await FirebaseFirestore.instance
+        .collection('notifications')
+        .where('userId', isEqualTo: uid)
+        .where('isRead', isEqualTo: false)
+        .get();
+    final batch = FirebaseFirestore.instance.batch();
+    for (final doc in snap.docs) {
+      batch.update(doc.reference, {'isRead': true});
     }
+    await batch.commit();
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('All notifications marked as read'),
+        backgroundColor: AppTheme.success,
+        behavior: SnackBarBehavior.floating,
+      ));
+    }
+  }
+
+  Future<void> _delete(String notifId) async {
+    await FirebaseFirestore.instance
+        .collection('notifications')
+        .doc(notifId)
+        .delete();
   }
 
   @override
@@ -118,195 +74,223 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         ),
         actions: [
           TextButton(
-            onPressed: _isSaving ? null : _savePrefs,
-            child: _isSaving
-                ? const SizedBox(width: 16, height: 16,
-                    child: CircularProgressIndicator(
-                        strokeWidth: 2, color: AppTheme.primary))
-                : const Text('Save',
-                    style: TextStyle(
-                        color: AppTheme.primary, fontWeight: FontWeight.w600)),
+            onPressed: () => _markAllRead(context),
+            child: const Text('Mark all read',
+                style: TextStyle(color: AppTheme.primary, fontSize: 12)),
           ),
         ],
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          // Master toggle
-          _NotifSection(
-            title: 'Push Notifications',
-            items: [
-              _NotifTile(
-                icon: Icons.notifications_active_outlined,
-                title: 'Enable push notifications',
-                subtitle: 'Receive all app notifications',
-                value: _pushEnabled,
-                onChanged: (v) => setState(() {
-                  _pushEnabled = v;
-                  if (!v) {
-                    _rideRequests = _rideAccepted =
-                        _rideReminders = _rideUpdates = _promotions = false;
-                  }
-                }),
-              ),
-            ],
-          ),
+      body: StreamBuilder<List<Map<String, dynamic>>>(
+        stream: _notifStream,
+        builder: (context, snap) {
+          if (snap.connectionState == ConnectionState.waiting) {
+            return const Center(
+                child: CircularProgressIndicator(color: AppTheme.primary));
+          }
+          if (snap.hasError) {
+            return Center(child: Text('Error: ${snap.error}',
+                style: const TextStyle(color: AppTheme.textMedium)));
+          }
 
-          const SizedBox(height: 12),
+          final notifs = snap.data ?? [];
 
-          // Ride notifications
-          _NotifSection(
-            title: 'Ride Alerts',
-            items: [
-              _NotifTile(
-                icon: Icons.person_add_outlined,
-                title: 'Booking requests',
-                subtitle: 'When someone requests your ride',
-                value: _rideRequests && _pushEnabled,
-                enabled: _pushEnabled,
-                onChanged: (v) => setState(() => _rideRequests = v),
-              ),
-              _NotifTile(
-                icon: Icons.check_circle_outline,
-                title: 'Booking accepted',
-                subtitle: 'When your request is accepted',
-                value: _rideAccepted && _pushEnabled,
-                enabled: _pushEnabled,
-                onChanged: (v) => setState(() => _rideAccepted = v),
-              ),
-              _NotifTile(
-                icon: Icons.alarm_outlined,
-                title: 'Ride reminders',
-                subtitle: '30 min before departure',
-                value: _rideReminders && _pushEnabled,
-                enabled: _pushEnabled,
-                onChanged: (v) => setState(() => _rideReminders = v),
-              ),
-              _NotifTile(
-                icon: Icons.update_outlined,
-                title: 'Ride updates',
-                subtitle: 'Status changes & driver updates',
-                value: _rideUpdates && _pushEnabled,
-                enabled: _pushEnabled,
-                onChanged: (v) => setState(() => _rideUpdates = v),
-              ),
-            ],
-          ),
+          if (notifs.isEmpty) {
+            return Center(
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                Container(
+                  width: 72, height: 72,
+                  decoration: BoxDecoration(
+                      color: AppTheme.bgWhite,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: AppTheme.border)),
+                  child: const Icon(Icons.notifications_none,
+                      color: AppTheme.textLight, size: 36),
+                ),
+                const SizedBox(height: 16),
+                const Text('No notifications yet',
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600,
+                        color: AppTheme.textDark)),
+                const SizedBox(height: 6),
+                const Text("You'll see ride updates here",
+                    style: TextStyle(color: AppTheme.textMedium, fontSize: 13)),
+              ]),
+            );
+          }
 
-          const SizedBox(height: 12),
+          return ListView.separated(
+            padding: const EdgeInsets.all(16),
+            itemCount: notifs.length,
+            separatorBuilder: (_, __) => const SizedBox(height: 8),
+            itemBuilder: (_, i) {
+              final n      = notifs[i];
+              final id     = n['id'] as String;
+              final isRead = n['isRead'] == true;
+              final type   = n['type'] as String? ?? '';
+              final rideId = n['rideId'] as String?;
+              DateTime? createdAt;
+              try {
+                if (n['createdAt'] != null) {
+                  createdAt = DateTime.parse(n['createdAt'] as String);
+                }
+              } catch (_) {}
 
-          // Other
-          _NotifSection(
-            title: 'Other',
-            items: [
-              _NotifTile(
-                icon: Icons.local_offer_outlined,
-                title: 'Promotions',
-                subtitle: 'App news and offers',
-                value: _promotions && _pushEnabled,
-                enabled: _pushEnabled,
-                onChanged: (v) => setState(() => _promotions = v),
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 80),
-        ],
+              return Dismissible(
+                key: Key(id),
+                direction: DismissDirection.endToStart,
+                background: Container(
+                  alignment: Alignment.centerRight,
+                  padding: const EdgeInsets.only(right: 20),
+                  decoration: BoxDecoration(
+                    color: AppTheme.error,
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: const Icon(Icons.delete_outline,
+                      color: Colors.white, size: 24),
+                ),
+                onDismissed: (_) => _delete(id),
+                child: GestureDetector(
+                  onTap: () {
+                    if (!isRead) _markRead(id);
+                    if (rideId != null && rideId.isNotEmpty) {
+                      context.push('/ride/$rideId');
+                    }
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: isRead
+                          ? AppTheme.bgWhite
+                          : AppTheme.primary.withOpacity(0.05),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: isRead
+                            ? AppTheme.border
+                            : AppTheme.primary.withOpacity(0.3),
+                      ),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          width: 42, height: 42,
+                          decoration: BoxDecoration(
+                            color: _iconBg(type),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Icon(_iconFor(type),
+                              color: _iconColor(type), size: 20),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(children: [
+                                Expanded(
+                                  child: Text(
+                                    n['title'] as String? ?? '',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: isRead
+                                          ? FontWeight.w500
+                                          : FontWeight.w700,
+                                      color: AppTheme.textDark,
+                                    ),
+                                  ),
+                                ),
+                                if (!isRead)
+                                  Container(
+                                    width: 8, height: 8,
+                                    decoration: const BoxDecoration(
+                                        color: AppTheme.primary,
+                                        shape: BoxShape.circle),
+                                  ),
+                              ]),
+                              const SizedBox(height: 3),
+                              Text(
+                                n['body'] as String? ?? '',
+                                style: const TextStyle(
+                                    fontSize: 13,
+                                    color: AppTheme.textMedium,
+                                    height: 1.4),
+                              ),
+                              if (createdAt != null) ...[
+                                const SizedBox(height: 6),
+                                Text(
+                                  _timeAgo(createdAt),
+                                  style: const TextStyle(
+                                      fontSize: 11, color: AppTheme.textLight),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            },
+          );
+        },
       ),
     );
   }
-}
 
-// ── Section wrapper ────────────────────────────────────────────────
-class _NotifSection extends StatelessWidget {
-  final String title;
-  final List<_NotifTile> items;
-  const _NotifSection({required this.title, required this.items});
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(left: 4, bottom: 8),
-          child: Text(title,
-              style: const TextStyle(
-                  fontSize: 12, fontWeight: FontWeight.w600,
-                  color: AppTheme.textMedium, letterSpacing: 0.5)),
-        ),
-        Container(
-          decoration: BoxDecoration(
-            color: AppTheme.bgWhite,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: AppTheme.border),
-          ),
-          child: Column(
-            children: items.asMap().entries.map((e) {
-              final isLast = e.key == items.length - 1;
-              return Column(children: [
-                e.value,
-                if (!isLast)
-                  const Divider(height: 1, indent: 56, color: AppTheme.border),
-              ]);
-            }).toList(),
-          ),
-        ),
-      ],
-    );
+  IconData _iconFor(String type) {
+    switch (type) {
+      case 'ride_status':     return Icons.directions_car;
+      case 'ride_cancelled':  return Icons.cancel_outlined;
+      case 'booking_request': return Icons.person_add_outlined;
+      case 'booking_update':  return Icons.check_circle_outline;
+      case 'booking_accepted':return Icons.check_circle_outline;
+      case 'booking_rejected':return Icons.cancel_outlined;
+      case 'ride_started':    return Icons.play_arrow;
+      case 'ride_completed':  return Icons.flag;
+      case 'new_message':     return Icons.chat_bubble_outline;
+      case 'message':         return Icons.chat_bubble_outline;
+      default:                return Icons.notifications_outlined;
+    }
   }
-}
 
-// ── Individual toggle tile ─────────────────────────────────────────
-class _NotifTile extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final String subtitle;
-  final bool value;
-  final bool enabled;
-  final ValueChanged<bool> onChanged;
+  Color _iconBg(String type) {
+    switch (type) {
+      case 'ride_status':
+      case 'ride_started':    return AppTheme.primary.withOpacity(0.1);
+      case 'ride_cancelled':
+      case 'booking_rejected':return AppTheme.error.withOpacity(0.1);
+      case 'booking_request': return AppTheme.warning.withOpacity(0.1);
+      case 'booking_update':
+      case 'booking_accepted':
+      case 'ride_completed':  return AppTheme.success.withOpacity(0.1);
+      case 'new_message':
+      case 'message':         return AppTheme.primary.withOpacity(0.1);
+      default:                return AppTheme.bgLight;
+    }
+  }
 
-  const _NotifTile({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    required this.value,
-    required this.onChanged,
-    this.enabled = true,
-  });
+  Color _iconColor(String type) {
+    switch (type) {
+      case 'ride_status':
+      case 'ride_started':    return AppTheme.primary;
+      case 'ride_cancelled':
+      case 'booking_rejected':return AppTheme.error;
+      case 'booking_request': return AppTheme.warning;
+      case 'booking_update':
+      case 'booking_accepted':
+      case 'ride_completed':  return AppTheme.success;
+      case 'new_message':
+      case 'message':         return AppTheme.primary;
+      default:                return AppTheme.textMedium;
+    }
+  }
 
-  @override
-  Widget build(BuildContext context) {
-    return Opacity(
-      opacity: enabled ? 1.0 : 0.45,
-      child: ListTile(
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-        leading: Container(
-          width: 36, height: 36,
-          decoration: BoxDecoration(
-            color: value
-                ? AppTheme.primary.withOpacity(0.1)
-                : AppTheme.bgLight,
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Icon(icon,
-              size: 20,
-              color: value ? AppTheme.primary : AppTheme.textLight),
-        ),
-        title: Text(title,
-            style: const TextStyle(
-                fontSize: 14, fontWeight: FontWeight.w500,
-                color: AppTheme.textDark)),
-        subtitle: Text(subtitle,
-            style: const TextStyle(
-                fontSize: 12, color: AppTheme.textMedium)),
-        trailing: Switch(
-          value: value,
-          onChanged: enabled ? onChanged : null,
-          activeColor: AppTheme.primary,
-        ),
-      ),
-    );
+  String _timeAgo(DateTime dt) {
+    final diff = DateTime.now().difference(dt);
+    if (diff.inMinutes < 1)  return 'Just now';
+    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+    if (diff.inHours   < 24) return '${diff.inHours}h ago';
+    if (diff.inDays    < 7)  return '${diff.inDays}d ago';
+    return DateFormat('d MMM').format(dt);
   }
 }

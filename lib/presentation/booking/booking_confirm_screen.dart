@@ -71,7 +71,7 @@ class _BookingConfirmScreenState extends State<BookingConfirmScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Booking failed. Please try again.'),
+            content: Text('You have already booked this ride.'),
             backgroundColor: AppTheme.error,
           ),
         );
@@ -264,7 +264,7 @@ class _BookingSuccessView extends StatelessWidget {
               const SizedBox(height: 12),
               TextButton(
                 onPressed: () => context.push('/chat/${ride.id}'),
-                child: const Text('Message the driver',
+                child: const Text('Contact',
                   style: TextStyle(color: AppTheme.primary)),
               ),
             ],

@@ -4,12 +4,6 @@ import '../../core/theme/app_theme.dart';
 import '../../data/services/ride_service.dart';
 import '../../data/models/ride_model.dart';
 
-// Mock passengers on board
-final _mockPassengers = [
-  {'name': 'Usman Tariq', 'photo': null},
-  {'name': 'Fatima Malik', 'photo': null},
-];
-
 class ActiveRideScreen extends StatefulWidget {
   final String rideId;
   const ActiveRideScreen({super.key, required this.rideId});
@@ -23,6 +17,11 @@ class _ActiveRideScreenState extends State<ActiveRideScreen> {
   RideModel? _ride;
   bool _isLoading = true;
   bool _rideStarted = false;
+
+  final List<Map<String, dynamic>> _mockPassengers = [
+  {'name': 'Ali Hassan'},
+  {'name': 'Sara Khan'},
+];
 
   @override
   void initState() {

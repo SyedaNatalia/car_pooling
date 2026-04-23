@@ -25,6 +25,7 @@ import '../../presentation/profile/profile_screen.dart';
 import '../../presentation/profile/edit_profile_screen.dart';
 import '../../presentation/chat/chat_screen.dart';
 import '../../presentation/admin/admin_screen.dart';
+import '../../presentation/profile/rating_screen.dart';
 
 final appRouterProvider = Provider<GoRouter>((ref) {
   // Listen to auth state for redirect
@@ -125,6 +126,18 @@ GoRoute(path: '/my-rides',       builder: (_, __) => const MyRidesScreen()),
 GoRoute(path: '/notifications',  builder: (_, __) => const NotificationsScreen()),
 GoRoute(path: '/help',           builder: (_, __) => const HelpScreen()),
 GoRoute(path: '/about',          builder: (_, __) => const AboutScreen()),
+GoRoute(
+  path: '/rate/:rideId/:ratedUserId',
+  builder: (context, state) {
+    final extra = state.extra as Map<String, dynamic>?;
+    return RatingScreen(
+      rideId: state.pathParameters['rideId']!,
+      ratedUserId: state.pathParameters['ratedUserId']!,
+      ratedUserName: extra?['name'] as String? ?? 'User',
+      ratedUserPhoto: extra?['photo'] as String?,
+    );
+  },
+),
     ],
   );
 });

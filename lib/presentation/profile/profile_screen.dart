@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/theme/app_theme.dart';
 import '../../data/services/auth_service.dart';
@@ -209,12 +211,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       label: 'Edit profile',
                       onTap: () => context.push('/edit-profile'),
                     ),
-                    if (user.role != 'passenger')
-                      _MenuItem(
-                        icon: Icons.directions_car_outlined,
-                        label: 'Car details',
-                        onTap: () => context.push('/edit-profile'),
-                      ),
+
                     _MenuItem(
                       icon: Icons.notifications_outlined,
                       label: 'Notifications',

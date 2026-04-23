@@ -16,14 +16,14 @@ const String _kGoogleApiKey = 'AIzaSyBqIfdzqfPN8JIcLkEaGObApnn5JKk-BZI';
 class _RideType {
   final String id;
   final String label;
-  final String imageUrl;
+  final String assetPath;
   final double ratePerKm;
   final int capacity;
   String eta;
   _RideType({
     required this.id,
     required this.label,
-    required this.imageUrl,
+    required this.assetPath,
     required this.ratePerKm,
     required this.capacity,
     required this.eta,
@@ -70,17 +70,17 @@ class _FindRideScreenState extends State<FindRideScreen> {
   final List<_RideType> _rideTypes = [
     _RideType(
       id: 'economy', label: 'Economy',
-      imageUrl: 'https://imgd.aeplcdn.com/664x374/n/cw/ec/35295/alto-exterior-right-front-three-quarter-2.jpeg?isig=0&q=80',
+      assetPath: 'assets/images/economy.JPG',
       ratePerKm: 18, capacity: 4, eta: '3 min',
     ),
     _RideType(
       id: 'comfort', label: 'Comfort',
-      imageUrl: 'https://imgd.aeplcdn.com/664x374/n/cw/ec/53239/corolla-altis-exterior-right-front-three-quarter-3.jpeg?isig=0&q=80',
+      assetPath: 'assets/images/comfort.JPG',
       ratePerKm: 28, capacity: 4, eta: '5 min',
     ),
     _RideType(
       id: 'premium', label: 'Premium',
-      imageUrl: 'https://imgd.aeplcdn.com/664x374/n/cw/ec/44709/fortuner-exterior-right-front-three-quarter-19.jpeg?isig=0&q=80',
+      assetPath: 'assets/images/premium.AVIF',
       ratePerKm: 45, capacity: 7, eta: '8 min',
     ),
   ];
@@ -742,9 +742,9 @@ class _FindRideScreenState extends State<FindRideScreen> {
                                 children: [
                                   SizedBox(
                                     height: 52,
-                                    child: Image.network(
-                                      rt.imageUrl,
-                                      fit: BoxFit.cover,
+                                    child: Image.asset(
+                                      rt.assetPath,
+                                      fit: BoxFit.contain,
                                       errorBuilder: (_, __, ___) => Icon(
                                           Icons.directions_car, size: 44,
                                           color: selected ? AppTheme.primary : AppTheme.textMedium),

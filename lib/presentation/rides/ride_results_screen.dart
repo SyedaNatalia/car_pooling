@@ -1,8 +1,8 @@
-// lib/presentation/rides/ride_results_screen.dart
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import '../../core/theme/app_theme.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../../data/services/ride_service.dart';
 import '../../data/models/ride_model.dart';
 
@@ -28,7 +28,8 @@ class _RideResultsScreenState extends State<RideResultsScreen> {
   Future<void> _loadRides() async {
     setState(() => _isLoading = true);
     try {
-      final rides = await _rideService.searchRides(date: widget.date);
+      final currentUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+      final rides = await _rideService.searchRides(date: widget.date, excludeDriverId: currentUid);
       if (mounted) setState(() { _rides = rides; _isLoading = false; });
     } catch (e) {
       if (mounted) setState(() => _isLoading = false);
