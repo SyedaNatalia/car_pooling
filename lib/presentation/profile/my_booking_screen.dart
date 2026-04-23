@@ -1,4 +1,3 @@
-// lib/presentation/profile/my_bookings_screen.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -81,18 +80,6 @@ class MyBookingsScreen extends StatelessWidget {
                 const Text('Your ride bookings will appear here',
                     style: TextStyle(color: AppTheme.textMedium, fontSize: 13)),
                 const SizedBox(height: 20),
-                ElevatedButton.icon(
-                  onPressed: () => context.push('/find-ride'),
-                  icon: const Icon(Icons.search, size: 18),
-                  label: const Text('Find a Ride'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppTheme.primary,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12)),
-                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                  ),
-                ),
               ]),
             );
           }

@@ -18,11 +18,33 @@ class RideService {
   CollectionReference get _notifications =>
       _firestore.collection(AppConstants.notificationsCollection);
 
+  // ── FIX 1: Duplicate ride prevention ────────────────────────────
+  // Check karta hai k driver ka koi upcoming/active ride already exist karta hai
+  Future<bool> hasActiveRide(String driverId) async {
+    final snap = await _rides
+        .where('driverId', isEqualTo: driverId)
+        .where('status', whereIn: [
+          AppConstants.rideUpcoming,
+          AppConstants.rideActive,
+        ])
+        .get();
+    return snap.docs.isNotEmpty;
+  }
+
+  // ── FIX 2: createRide with duplicate guard ───────────────────────
   Future<String> createRide(RideModel ride) async {
+    // Publish karne se pehle check karo k already ek active ride hai
+    final alreadyActive = await hasActiveRide(ride.driverId);
+    if (alreadyActive) {
+      throw Exception(
+        'You have already published a ride. Please complete or cancel it before offering a new one.',
+      );
+    }
     final docRef = await _rides.add(ride.toMap());
     return docRef.id;
   }
 
+  // ── FIX 3: searchRides — deduplicate + expire past rides ─────────
   Future<List<RideModel>> searchRides({
     required DateTime date,
     String? excludeDriverId,
@@ -41,12 +63,19 @@ class RideService {
         .get();
 
     final now = DateTime.now();
+
+    // Unique IDs track karo taake duplicates na aayein
+    final seen = <String>{};
+
     return snapshot.docs
         .map((d) => RideModel.fromMap(d.data() as Map<String, dynamic>, d.id))
-        .where((r) =>
-            r.availableSeats > 0 &&
-            r.driverId != driverToExclude &&
-            r.departureTime.isAfter(now)) // FIX: expired rides hide
+        .where((r) {
+          if (seen.contains(r.id)) return false; // duplicate skip
+          seen.add(r.id);
+          return r.availableSeats > 0 &&
+              r.driverId != driverToExclude &&
+              r.departureTime.isAfter(now); // FIX: expired rides hide
+        })
         .toList();
   }
 
@@ -63,11 +92,12 @@ class RideService {
     });
   }
 
-  // FIX: no orderBy — client-side sort (no Firestore index needed)
   Stream<List<RideModel>> getDriverRides(String driverId) {
     return _rides.where('driverId', isEqualTo: driverId).snapshots().map((snap) {
-      final list = snap.docs
+      final seen  = <String>{};
+      final list  = snap.docs
           .map((d) => RideModel.fromMap(d.data() as Map<String, dynamic>, d.id))
+          .where((r) => seen.add(r.id)) // deduplicate
           .toList();
       list.sort((a, b) => b.departureTime.compareTo(a.departureTime));
       return list;
@@ -79,8 +109,10 @@ class RideService {
         .where('passengerIds', arrayContains: passengerId)
         .snapshots()
         .map((snap) {
+      final seen = <String>{};
       final list = snap.docs
           .map((d) => RideModel.fromMap(d.data() as Map<String, dynamic>, d.id))
+          .where((r) => seen.add(r.id)) // deduplicate
           .toList();
       list.sort((a, b) => b.departureTime.compareTo(a.departureTime));
       return list;
@@ -103,7 +135,10 @@ class RideService {
     }
     if (title.isNotEmpty) {
       for (final uid in ride.passengerIds) {
-        await _saveNotif(userId: uid, title: title, body: body, type: type, rideId: rideId);
+        // FIX: driver ko apni ride ka notification na bhejo
+        if (uid != ride.driverId) {
+          await _saveNotif(userId: uid, title: title, body: body, type: type, rideId: rideId);
+        }
       }
     }
   }
@@ -124,8 +159,11 @@ class RideService {
     if (rideDoc.exists) {
       final ride = RideModel.fromMap(rideDoc.data() as Map<String, dynamic>, rideId);
       for (final uid in ride.passengerIds) {
-        await _saveNotif(userId: uid, title: 'Ride Cancelled ❌',
-            body: 'Ride with ${ride.driverName} cancelled.', type: 'ride_cancelled', rideId: rideId);
+        // FIX: driver ko apni hi ride cancel ka notification na aye
+        if (uid != ride.driverId) {
+          await _saveNotif(userId: uid, title: 'Ride Cancelled ❌',
+              body: 'Ride with ${ride.driverName} cancelled.', type: 'ride_cancelled', rideId: rideId);
+        }
       }
     }
   }
@@ -140,17 +178,20 @@ class RideService {
 
     final docRef = await _bookings.add(booking.toMap());
 
-    // Notify driver
+    // FIX: Driver ko notify karo — lekin sirf tab jab passenger != driver
     final rideDoc = await _rides.doc(booking.rideId).get();
     if (rideDoc.exists) {
       final ride = RideModel.fromMap(rideDoc.data() as Map<String, dynamic>, booking.rideId);
-      await _saveNotif(
-        userId: ride.driverId,
-        title: 'New Booking Request 🙋',
-        body: '${booking.passengerName} wants to join your ride.',
-        type: 'booking_request',
-        rideId: booking.rideId,
-      );
+      // Agar passenger aur driver same nahi hain tabhi notification bheji jayegi
+      if (ride.driverId != booking.passengerId) {
+        await _saveNotif(
+          userId: ride.driverId,
+          title: 'New Booking Request 🙋',
+          body: '${booking.passengerName} wants to join your ride.',
+          type: 'booking_request',
+          rideId: booking.rideId,
+        );
+      }
     }
     return docRef.id;
   }
@@ -210,7 +251,6 @@ class RideService {
     }
   }
 
-  // FIX: Message notification — send to all ride participants except sender
   Future<void> notifyMessage({
     required String rideId,
     required String senderId,
@@ -221,7 +261,6 @@ class RideService {
     if (!rideDoc.exists) return;
     final ride = RideModel.fromMap(rideDoc.data() as Map<String, dynamic>, rideId);
 
-    // All participants (driver + passengers) except sender
     final participants = <String>{ride.driverId, ...ride.passengerIds};
     participants.remove(senderId);
 

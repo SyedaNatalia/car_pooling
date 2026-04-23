@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
-import '../../core/theme/app_theme.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../../core/theme/app_theme.dart';
 import '../../data/services/ride_service.dart';
 import '../../data/models/ride_model.dart';
 
@@ -29,8 +30,14 @@ class _RideResultsScreenState extends State<RideResultsScreen> {
     setState(() => _isLoading = true);
     try {
       final currentUid = FirebaseAuth.instance.currentUser?.uid ?? '';
-      final rides = await _rideService.searchRides(date: widget.date, excludeDriverId: currentUid);
-      if (mounted) setState(() { _rides = rides; _isLoading = false; });
+      final rides = await _rideService.searchRides(
+        date: widget.date,
+        excludeDriverId: currentUid,
+      );
+      // FIX: client-side deduplicate bhi karo
+      final seen = <String>{};
+      final unique = rides.where((r) => seen.add(r.id)).toList();
+      if (mounted) setState(() { _rides = unique; _isLoading = false; });
     } catch (e) {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -78,6 +85,19 @@ class _RideResultsScreenState extends State<RideResultsScreen> {
 class _RideResultCard extends StatelessWidget {
   final RideModel ride;
   const _RideResultCard({required this.ride});
+
+  Future<void> _callDriver(BuildContext context, String? phone) async {
+    if (phone == null || phone.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Driver phone not available')),
+      );
+      return;
+    }
+    final uri = Uri(scheme: 'tel', path: phone.trim());
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -138,6 +158,21 @@ class _RideResultCard extends StatelessWidget {
                     ],
                   ),
                 ),
+                // FIX: call button on results list
+                if (ride.driverPhone != null)
+                  InkWell(
+                    onTap: () => _callDriver(context, ride.driverPhone),
+                    borderRadius: BorderRadius.circular(20),
+                    child: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: AppTheme.primaryLight,
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.call, color: AppTheme.primary, size: 18),
+                    ),
+                  ),
+                const SizedBox(width: 8),
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
@@ -167,7 +202,7 @@ class _RideResultCard extends StatelessWidget {
             const Divider(height: 1, color: AppTheme.border),
             const SizedBox(height: 14),
 
-            // Route
+            // FIX: exact route — start se end tak dikhao
             Row(
               children: [
                 Column(

@@ -33,26 +33,35 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Future<void> _loadData() async {
     setState(() => _loadingRides = true);
     final user = await _authService.getCurrentUserProfile();
-    // Exclude current user's own rides from dashboard
+
+    // FIX: current user ki apni rides exclude karo
     final currentUid = FirebaseAuth.instance.currentUser?.uid ?? '';
     final rides = await _rideService.searchRides(
       date: DateTime.now(),
       excludeDriverId: currentUid,
     );
+
     if (mounted) {
       setState(() {
         _user = user;
-        _upcomingRides = rides.take(3).toList();
+        // FIX: duplicates remove karo ID se, phir sirf 3 lo
+        final seen = <String>{};
+        _upcomingRides = rides
+            .where((r) => seen.add(r.id))
+            .take(3)
+            .toList();
         _loadingRides = false;
       });
     }
   }
 
+  // FIX: waqt ke hisab se greeting
   String _greeting() {
     final hour = DateTime.now().hour;
     if (hour < 12) return 'Good morning';
     if (hour < 17) return 'Good afternoon';
-    return 'Good evening';
+    if (hour < 21) return 'Good evening';
+    return 'Good night';
   }
 
   @override
@@ -99,7 +108,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                             ],
                           ),
                         ),
-                        // Notification bell
+                        // FIX: Notification bell with unread count badge
                         Stack(
                           children: [
                             IconButton(
@@ -110,7 +119,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                             StreamBuilder<QuerySnapshot>(
                               stream: FirebaseFirestore.instance
                                   .collection('notifications')
-                                  .where('userId', isEqualTo: FirebaseAuth.instance.currentUser?.uid ?? '')
+                                  .where('userId',
+                                      isEqualTo: FirebaseAuth.instance.currentUser?.uid ?? '')
                                   .where('isRead', isEqualTo: false)
                                   .snapshots(),
                               builder: (_, snap) {
@@ -121,12 +131,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                   child: Container(
                                     width: 16, height: 16,
                                     decoration: const BoxDecoration(
-                                      color: Colors.red, shape: BoxShape.circle),
+                                        color: Colors.red, shape: BoxShape.circle),
                                     child: Center(
                                       child: Text(
                                         count > 9 ? '9+' : '$count',
                                         style: const TextStyle(
-                                            color: Colors.white, fontSize: 9,
+                                            color: Colors.white,
+                                            fontSize: 9,
                                             fontWeight: FontWeight.w700),
                                       ),
                                     ),
@@ -292,14 +303,6 @@ class _RideCard extends StatelessWidget {
   final RideModel ride;
   const _RideCard({required this.ride});
 
-  String _rideTypeLabel(String type) {
-    switch (type) {
-      case 'comfort': return 'Comfort';
-      case 'premium': return 'Premium';
-      default:        return 'Economy';
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
@@ -313,34 +316,20 @@ class _RideCard extends StatelessWidget {
         ),
         child: Row(
           children: [
-            // Ride type image
-            ClipRRect(
-              borderRadius: BorderRadius.circular(10),
-              child: Image.asset(
-                ride.rideType == 'comfort'
-                    ? 'assets/images/comfort.JPG'
-                    : ride.rideType == 'premium'
-                        ? 'assets/images/premium.AVIF'
-                        : 'assets/images/economy.JPG',
-                width: 52,
-                height: 52,
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => Container(
-                  width: 52, height: 52,
-                  decoration: BoxDecoration(
-                    color: AppTheme.primaryLight,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: const Icon(Icons.directions_car, color: AppTheme.primary, size: 26),
-                ),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: AppTheme.primaryLight,
+                borderRadius: BorderRadius.circular(10),
               ),
+              child: const Icon(Icons.directions_car, color: AppTheme.primary, size: 22),
             ),
             const SizedBox(width: 14),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // FROM → TO (real addresses)
+                  // FIX: exact location dikhao — "X se Y ja rahe hain" wala format
                   Text(
                     '${ride.startPoint.address.split(',').first} → ${ride.endPoint.address.split(',').first}',
                     style: const TextStyle(
@@ -358,11 +347,6 @@ class _RideCard extends StatelessWidget {
                         style: const TextStyle(fontSize: 12, color: AppTheme.textMedium),
                       ),
                     ],
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    _rideTypeLabel(ride.rideType),
-                    style: const TextStyle(fontSize: 11, color: AppTheme.textLight),
                   ),
                 ],
               ),

@@ -1,7 +1,8 @@
-// lib/presentation/rides/ride_detail_screen.dart
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../../core/theme/app_theme.dart';
 import '../../data/services/ride_service.dart';
 import '../../data/models/ride_model.dart';
@@ -30,6 +31,26 @@ class _RideDetailScreenState extends State<RideDetailScreen> {
     if (mounted) setState(() { _ride = ride; _isLoading = false; });
   }
 
+  // FIX: call karne ka function
+  Future<void> _callNumber(String? phone) async {
+    if (phone == null || phone.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Phone number not available')),
+      );
+      return;
+    }
+    final uri = Uri(scheme: 'tel', path: phone.trim());
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri);
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not open dialer')),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
@@ -44,6 +65,10 @@ class _RideDetailScreenState extends State<RideDetailScreen> {
       );
     }
     final ride = _ride!;
+    final currentUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final isDriver    = ride.driverId == currentUid;
+    final isPassenger = ride.passengerIds.contains(currentUid);
+
     return Scaffold(
       backgroundColor: AppTheme.bgLight,
       appBar: AppBar(
@@ -53,25 +78,34 @@ class _RideDetailScreenState extends State<RideDetailScreen> {
           onPressed: () => context.pop(),
         ),
         actions: [
+          // FIX: call button — driver ko passenger call kare, passenger ko driver call kare
+          if (!isDriver && ride.driverPhone != null)
+            IconButton(
+              icon: const Icon(Icons.call_outlined),
+              tooltip: 'Call Driver',
+              onPressed: () => _callNumber(ride.driverPhone),
+            ),
           IconButton(
             icon: const Icon(Icons.chat_bubble_outline),
             onPressed: () => context.push('/chat/${ride.id}'),
           ),
         ],
       ),
-      bottomNavigationBar: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
-        child: ElevatedButton(
-          onPressed: ride.availableSeats > 0
-              ? () => context.push('/ride/${ride.id}/book')
-              : null,
-          child: Text(
-            ride.availableSeats > 0
-                ? 'Book this ride — ${ride.availableSeats} seat${ride.availableSeats != 1 ? 's' : ''} left'
-                : 'No seats available',
-          ),
-        ),
-      ),
+      bottomNavigationBar: isDriver
+          ? null // driver ke liye book button nahi
+          : Padding(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+              child: ElevatedButton(
+                onPressed: ride.availableSeats > 0
+                    ? () => context.push('/ride/${ride.id}/book')
+                    : null,
+                child: Text(
+                  ride.availableSeats > 0
+                      ? 'Book this ride — ${ride.availableSeats} seat${ride.availableSeats != 1 ? 's' : ''} left'
+                      : 'No seats available',
+                ),
+              ),
+            ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
         child: Column(
@@ -124,21 +158,38 @@ class _RideDetailScreenState extends State<RideDetailScreen> {
                       ],
                     ),
                   ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: AppTheme.primaryLight,
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Text(
-                      '${ride.availableSeats}/${ride.totalSeats} seats',
-                      style: const TextStyle(
-                        color: AppTheme.primary,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
+                  // FIX: call button directly on driver card (passenger side)
+                  if (!isDriver && ride.driverPhone != null) ...[
+                    const SizedBox(width: 8),
+                    InkWell(
+                      onTap: () => _callNumber(ride.driverPhone),
+                      borderRadius: BorderRadius.circular(24),
+                      child: Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: AppTheme.primaryLight,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.call, color: AppTheme.primary, size: 20),
                       ),
                     ),
-                  ),
+                  ] else ...[
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: AppTheme.primaryLight,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        '${ride.availableSeats}/${ride.totalSeats} seats',
+                        style: const TextStyle(
+                          color: AppTheme.primary,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -154,7 +205,7 @@ class _RideDetailScreenState extends State<RideDetailScreen> {
 
             const SizedBox(height: 12),
 
-            // Route card
+            // Route card — FIX: exact addresses dikhao
             Container(
               padding: const EdgeInsets.all(18),
               decoration: BoxDecoration(

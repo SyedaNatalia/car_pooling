@@ -127,13 +127,13 @@ class _ManageRequestsScreenState extends State<ManageRequestsScreen> {
                     color: AppTheme.warning),
                 const SizedBox(height: 10),
                 ...pending.map((b) => Padding(
-                      padding: const EdgeInsets.only(bottom: 10),
-                      child: _BookingCard(
-                        booking: b,
-                        onAccept: () => _accept(b.id),
-                        onReject: () => _reject(b.id),
-                      ),
-                    )),
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: _BookingCard(
+                    booking: b,
+                    onAccept: () => _accept(b.id),
+                    onReject: () => _reject(b.id),
+                  ),
+                )),
                 const SizedBox(height: 8),
               ],
               if (accepted.isNotEmpty) ...[
@@ -143,12 +143,12 @@ class _ManageRequestsScreenState extends State<ManageRequestsScreen> {
                     color: AppTheme.success),
                 const SizedBox(height: 10),
                 ...accepted.map((b) => Padding(
-                      padding: const EdgeInsets.only(bottom: 10),
+                  padding: const EdgeInsets.only(bottom: 10),
                       child: _BookingCard(
                           booking: b,
                           onAccept: () {},
                           onReject: () {}),
-                    )),
+                )),
                 const SizedBox(height: 8),
               ],
               if (rejected.isNotEmpty) ...[
@@ -158,12 +158,12 @@ class _ManageRequestsScreenState extends State<ManageRequestsScreen> {
                     color: AppTheme.error),
                 const SizedBox(height: 10),
                 ...rejected.map((b) => Padding(
-                      padding: const EdgeInsets.only(bottom: 10),
+                  padding: const EdgeInsets.only(bottom: 10),
                       child: _BookingCard(
                           booking: b,
                           onAccept: () {},
                           onReject: () {}),
-                    )),
+                )),
               ],
             ],
           );
