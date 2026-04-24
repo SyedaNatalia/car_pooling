@@ -199,24 +199,24 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ),
 
             // Upcoming rides section
-            SliverToBoxAdapter(
+            const SliverToBoxAdapter(
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 24, 20, 12),
+                padding: EdgeInsets.fromLTRB(20, 24, 20, 12),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    const Text(
-                      'Available rides today',
+                    Text(
+                      'Available rides',
                       style: TextStyle(
                         fontSize: 17,
                         fontWeight: FontWeight.w600,
                         color: AppTheme.textDark,
                       ),
                     ),
-                    TextButton(
-                      onPressed: () => context.go('/find-ride'),
-                      child: const Text('See all', style: TextStyle(color: AppTheme.primary)),
-                    ),
+                    // TextButton(
+                    //   onPressed: () => context.go('/find-ride'),
+                    //   child: const Text('See all', style: TextStyle(color: AppTheme.primary)),
+                    // ),
                   ],
                 ),
               ),
@@ -399,7 +399,7 @@ class _EmptyRidesCard extends StatelessWidget {
             const Text('No upcoming rides',
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: AppTheme.textDark)),
             const SizedBox(height: 6),
-            const Text('Find a ride to office or offer\nyour car to colleagues',
+            const Text('Find ride or offer\nyour car to others',
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 13, color: AppTheme.textMedium, height: 1.5)),
             const SizedBox(height: 16),

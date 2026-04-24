@@ -199,7 +199,7 @@ class _BookingCardState extends State<_BookingCard> {
                       color: AppTheme.success, size: 16),
                   Container(width: 1, height: 28,
                       color: AppTheme.border.withOpacity(0.6)),
-                  const Icon(Icons.location_on,
+                  const Icon(Icons.location_on_outlined,
                       color: AppTheme.error, size: 16),
                 ]),
                 const SizedBox(width: 10),

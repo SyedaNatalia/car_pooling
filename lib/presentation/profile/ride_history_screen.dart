@@ -1,4 +1,3 @@
-// lib/presentation/profile/ride_history_screen.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -81,7 +80,7 @@ class _RideHistoryScreenState extends State<RideHistoryScreen>
         controller: _tabController,
         children: [
           _RideList(stream: _passengerRides, emptyMsg: 'No rides taken yet'),
-          _RideList(stream: _driverRides,    emptyMsg: 'No rides offered yet'),
+          _RideList(stream: _driverRides, emptyMsg: 'No rides offered yet', tappable: false),
         ],
       ),
     );
@@ -91,7 +90,8 @@ class _RideHistoryScreenState extends State<RideHistoryScreen>
 class _RideList extends StatelessWidget {
   final Stream<List<RideModel>> stream;
   final String emptyMsg;
-  const _RideList({required this.stream, required this.emptyMsg});
+  final bool tappable;
+  const _RideList({required this.stream, required this.emptyMsg, this.tappable = true});
 
   @override
   Widget build(BuildContext context) {
@@ -140,7 +140,7 @@ class _RideList extends StatelessWidget {
           padding: const EdgeInsets.all(16),
           itemCount: rides.length,
           separatorBuilder: (_, __) => const SizedBox(height: 10),
-          itemBuilder: (_, i) => _RideCard(ride: rides[i]),
+          itemBuilder: (_, i) => _RideCard(ride: rides[i], tappable: tappable),
         );
       },
     );
@@ -149,7 +149,8 @@ class _RideList extends StatelessWidget {
 
 class _RideCard extends StatelessWidget {
   final RideModel ride;
-  const _RideCard({required this.ride});
+  final bool tappable;
+  const _RideCard({required this.ride, this.tappable = true});
 
   Color get _statusColor {
     switch (ride.status) {
@@ -163,7 +164,7 @@ class _RideCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: () => context.push('/ride/${ride.id}'),
+      onTap: tappable ? () => context.push('/ride/${ride.id}') : null,
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(

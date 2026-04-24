@@ -152,7 +152,11 @@ class NotificationsScreen extends StatelessWidget {
                   onTap: () {
                     if (!isRead) _markRead(id);
                     if (rideId != null && rideId.isNotEmpty) {
-                      context.push('/ride/$rideId');
+                      if (type == 'booking_request') {
+                        context.push('/ride/$rideId/requests');
+                      } else {
+                        context.push('/ride/$rideId');
+                      }
                     }
                   },
                   child: Container(

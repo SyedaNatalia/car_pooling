@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../core/theme/app_theme.dart';
 import '../../data/models/booking_model.dart';
 import '../../data/services/ride_service.dart';
@@ -130,6 +131,7 @@ class _ManageRequestsScreenState extends State<ManageRequestsScreen> {
                   padding: const EdgeInsets.only(bottom: 10),
                   child: _BookingCard(
                     booking: b,
+                    rideId: widget.rideId,
                     onAccept: () => _accept(b.id),
                     onReject: () => _reject(b.id),
                   ),
@@ -146,6 +148,7 @@ class _ManageRequestsScreenState extends State<ManageRequestsScreen> {
                   padding: const EdgeInsets.only(bottom: 10),
                       child: _BookingCard(
                           booking: b,
+                          rideId: widget.rideId,
                           onAccept: () {},
                           onReject: () {}),
                 )),
@@ -161,6 +164,7 @@ class _ManageRequestsScreenState extends State<ManageRequestsScreen> {
                   padding: const EdgeInsets.only(bottom: 10),
                       child: _BookingCard(
                           booking: b,
+                          rideId: widget.rideId,
                           onAccept: () {},
                           onReject: () {}),
                 )),
@@ -276,10 +280,12 @@ class _SectionHeader extends StatelessWidget {
 // ── Booking card ───────────────────────────────────────────────────
 class _BookingCard extends StatefulWidget {
   final BookingModel booking;
+  final String rideId;
   final VoidCallback onAccept;
   final VoidCallback onReject;
   const _BookingCard({
     required this.booking,
+    required this.rideId,
     required this.onAccept,
     required this.onReject,
   });
@@ -299,10 +305,31 @@ class _BookingCardState extends State<_BookingCard> {
     }
   }
 
+  Future<void> _openChat() async {
+    context.push('/chat/${widget.rideId}');
+  }
+
+  Future<void> _makeCall() async {
+    final phone = widget.booking.passengerPhone;
+    if (phone == null || phone.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Phone number not available'),
+        backgroundColor: AppTheme.warning,
+        behavior: SnackBarBehavior.floating,
+      ));
+      return;
+    }
+    final uri = Uri(scheme: 'tel', path: phone);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final b = widget.booking;
-    final isPending = b.status == 'pending';
+    final isPending  = b.status == 'pending';
+    final isAccepted = b.status == 'accepted';
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -371,6 +398,53 @@ class _BookingCardState extends State<_BookingCard> {
           ),
         ]),
 
+        // ── Accepted: show msg + call icons ──────────────────────
+        if (isAccepted) ...[
+          const SizedBox(height: 12),
+          const Divider(height: 1, color: AppTheme.border),
+          const SizedBox(height: 12),
+          Row(children: [
+            const Icon(Icons.check_circle_outline,
+                color: AppTheme.success, size: 15),
+            const SizedBox(width: 6),
+            const Expanded(
+              child: Text('Passenger accepted',
+                  style: TextStyle(
+                      fontSize: 12,
+                      color: AppTheme.success,
+                      fontWeight: FontWeight.w500)),
+            ),
+            // Message button
+            GestureDetector(
+              onTap: _openChat,
+              child: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: AppTheme.primaryLight,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.chat_bubble_outline,
+                    color: AppTheme.primary, size: 18),
+              ),
+            ),
+            const SizedBox(width: 8),
+            // Call button
+            GestureDetector(
+              onTap: _makeCall,
+              child: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: AppTheme.success.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.call_outlined,
+                    color: AppTheme.success, size: 18),
+              ),
+            ),
+          ]),
+        ],
+
+        // ── Pending: show accept/reject buttons ──────────────────
         if (isPending) ...[
           const SizedBox(height: 12),
           const Divider(height: 1, color: AppTheme.border),

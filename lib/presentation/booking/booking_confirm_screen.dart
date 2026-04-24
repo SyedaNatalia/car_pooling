@@ -68,14 +68,14 @@ class _BookingConfirmScreenState extends State<BookingConfirmScreen> {
       await _rideService.createBooking(booking);
       if (mounted) setState(() => _bookingDone = true);
     } catch (e) {
-      if (mounted) {
+  if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('You have already booked this ride.'),
-            backgroundColor: AppTheme.error,
+      backgroundColor: AppTheme.error,
           ),
         );
-      }
+  }
     } finally {
       if (mounted) setState(() => _isBooking = false);
     }

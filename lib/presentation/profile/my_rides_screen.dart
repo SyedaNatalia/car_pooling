@@ -74,19 +74,19 @@ class MyRidesScreen extends StatelessWidget {
                     style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600,
                         color: AppTheme.textDark)),
                 const SizedBox(height: 6),
-                const Text('Tap below to create your first ride',
-                    style: TextStyle(color: AppTheme.textMedium, fontSize: 13)),
-                const SizedBox(height: 20),
-                ElevatedButton.icon(
-                  onPressed: () => context.push('/offer-ride'),
-                  icon: const Icon(Icons.add, size: 18),
-                  label: const Text('Offer a ride'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppTheme.primary, foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                  ),
-                ),
+                // const Text('Tap below to create your first ride',
+                //     style: TextStyle(color: AppTheme.textMedium, fontSize: 13)),
+                // const SizedBox(height: 20),
+                // ElevatedButton.icon(
+                //   onPressed: () => context.push('/offer-ride'),
+                //   icon: const Icon(Icons.add, size: 18),
+                //   label: const Text('Offer a ride'),
+                //   style: ElevatedButton.styleFrom(
+                //     backgroundColor: AppTheme.primary, foregroundColor: Colors.white,
+                //     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                //     padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                //   ),
+                // ),
               ]),
             );
           }

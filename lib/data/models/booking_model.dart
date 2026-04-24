@@ -6,6 +6,7 @@ class BookingModel {
   final String passengerId;
   final String passengerName;
   final String? passengerPhoto;
+  final String? passengerPhone;
   final LocationPoint pickupPoint;
   final String status;
   final DateTime createdAt;
@@ -16,6 +17,7 @@ class BookingModel {
     required this.passengerId,
     required this.passengerName,
     this.passengerPhoto,
+    this.passengerPhone,
     required this.pickupPoint,
     required this.status,
     required this.createdAt,
@@ -28,6 +30,7 @@ class BookingModel {
       passengerId: data['passengerId'] ?? '',
       passengerName: data['passengerName'] ?? '',
       passengerPhoto: data['passengerPhoto'],
+      passengerPhone: data['passengerPhone'],
       pickupPoint: LocationPoint.fromMap(data['pickupPoint']),
       status: data['status'] ?? 'pending',
       createdAt: DateTime.parse(data['createdAt']),
@@ -39,6 +42,7 @@ class BookingModel {
     'passengerId': passengerId,
     'passengerName': passengerName,
     'passengerPhoto': passengerPhoto,
+    'passengerPhone': passengerPhone,
     'pickupPoint': pickupPoint.toMap(),
     'status': status,
     'createdAt': createdAt.toIso8601String(),

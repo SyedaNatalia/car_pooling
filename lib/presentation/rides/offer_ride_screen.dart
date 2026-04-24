@@ -401,14 +401,47 @@ class _OfferRideScreenState extends State<OfferRideScreen> {
       final rideId = await RideService().createRide(ride);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Ride published!'), backgroundColor: AppTheme.success),
+          SnackBar(
+            content: Row(children: [
+              const Icon(Icons.check_circle_outline, color: Colors.white, size: 18),
+              const SizedBox(width: 10),
+              const Text(
+                'Ride published successfully!',
+                style: TextStyle(color: Colors.white, fontSize: 13),
+              ),
+            ]),
+            backgroundColor: AppTheme.success,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            duration: const Duration(seconds: 2),
+          ),
         );
         context.push('/ride/$rideId/requests');
       }
     } catch (e) {
       if (mounted) {
+        // Extract a clean user-friendly message from the exception
+        String errMsg = e.toString();
+        if (errMsg.startsWith('Exception: ')) {
+          errMsg = errMsg.replaceFirst('Exception: ', '');
+        }
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e'), backgroundColor: AppTheme.error),
+          SnackBar(
+            content: Row(children: [
+              const Icon(Icons.error_outline, color: Colors.white, size: 18),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  errMsg,
+                  style: const TextStyle(color: Colors.white, fontSize: 13),
+                ),
+              ),
+            ]),
+            backgroundColor: AppTheme.error,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            duration: const Duration(seconds: 4),
+          ),
         );
       }
     } finally {
