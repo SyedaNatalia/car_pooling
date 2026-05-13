@@ -132,7 +132,7 @@ class _ActiveRideScreenState extends State<ActiveRideScreen> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.map_outlined, size: 64, color: AppTheme.textLight),
+                        const Icon(Icons.map_outlined, size: 64, color: AppTheme.textLight),
                         const SizedBox(height: 12),
                         const Text('Map View',
                           style: TextStyle(color: AppTheme.textMedium, fontSize: 16)),

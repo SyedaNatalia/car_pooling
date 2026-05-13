@@ -25,6 +25,8 @@ class _BookingConfirmScreenState extends State<BookingConfirmScreen> {
   bool _isBooking = false;
   bool _bookingDone = false;
   String _pickupAddress = '';
+  int _seatsNeeded = 1;
+  double _offeredPrice = 0;
 
   @override
   void initState() {
@@ -40,6 +42,7 @@ class _BookingConfirmScreenState extends State<BookingConfirmScreen> {
         _ride = ride;
         _currentUser = user;
         _pickupAddress = ride?.startPoint.address ?? '';
+        _offeredPrice = ride?.pricePerSeat ?? 0;
         _isLoading = false;
       });
     }
@@ -47,8 +50,14 @@ class _BookingConfirmScreenState extends State<BookingConfirmScreen> {
 
   Future<void> _confirmBooking() async {
     if (_ride == null || _currentUser == null) return;
+    if (_seatsNeeded > _ride!.availableSeats) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Only ${_ride!.availableSeats} seats available'),
+            backgroundColor: AppTheme.error),
+      );
+      return;
+    }
     setState(() => _isBooking = true);
-
     try {
       final booking = BookingModel(
         id: '',
@@ -61,21 +70,19 @@ class _BookingConfirmScreenState extends State<BookingConfirmScreen> {
           lat: _ride!.startPoint.lat,
           lng: _ride!.startPoint.lng,
         ),
+        seatsNeeded: _seatsNeeded,
+        offeredPrice: _offeredPrice,
         status: 'pending',
         createdAt: DateTime.now(),
       );
-
       await _rideService.createBooking(booking);
       if (mounted) setState(() => _bookingDone = true);
     } catch (e) {
-  if (mounted) {
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('You have already booked this ride.'),
-      backgroundColor: AppTheme.error,
-          ),
+          SnackBar(content: Text('$e'), backgroundColor: AppTheme.error),
         );
-  }
+      }
     } finally {
       if (mounted) setState(() => _isBooking = false);
     }
@@ -85,9 +92,8 @@ class _BookingConfirmScreenState extends State<BookingConfirmScreen> {
   Widget build(BuildContext context) {
     if (_isLoading) {
       return const Scaffold(
-        body: Center(child: CircularProgressIndicator(color: AppTheme.primary)));
+          body: Center(child: CircularProgressIndicator(color: AppTheme.primary)));
     }
-
     if (_bookingDone) return _BookingSuccessView(ride: _ride!);
 
     final ride = _ride!;
@@ -107,7 +113,7 @@ class _BookingConfirmScreenState extends State<BookingConfirmScreen> {
           child: _isBooking
               ? const SizedBox(height: 20, width: 20,
                   child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5))
-              : const Text('Confirm Booking'),
+              : const Text('Send Booking Request'),
         ),
       ),
       body: SingleChildScrollView(
@@ -127,11 +133,13 @@ class _BookingConfirmScreenState extends State<BookingConfirmScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text('Booking Summary',
-                    style: TextStyle(
-                      fontSize: 15, fontWeight: FontWeight.w600, color: AppTheme.textDark)),
+                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppTheme.textDark)),
                   const SizedBox(height: 16),
-                  _SummaryRow(icon: Icons.person_outline, label: 'Driver', value: ride.driverName),
+                  _SummaryRow(icon: Icons.person_outline,    label: 'Driver',     value: ride.driverName),
                   const SizedBox(height: 12),
+                  if (ride.carName.isNotEmpty)
+                    ...[_SummaryRow(icon: Icons.directions_car_outlined, label: 'Car', value: ride.carName),
+                    const SizedBox(height: 12)],
                   _SummaryRow(
                     icon: Icons.access_time_rounded,
                     label: 'Departure',
@@ -145,14 +153,72 @@ class _BookingConfirmScreenState extends State<BookingConfirmScreen> {
                     label: 'Seats available',
                     value: '${ride.availableSeats} of ${ride.totalSeats}',
                   ),
+                  if (ride.pricePerSeat > 0) ...[
+                    const SizedBox(height: 12),
+                    _SummaryRow(
+                      icon: Icons.monetization_on_outlined,
+                      label: 'Driver\'s price',
+                      value: 'Rs ${ride.pricePerSeat.toStringAsFixed(0)} / seat',
+                    ),
+                  ],
                 ],
               ),
             ),
 
-            const SizedBox(height: 16),
+            const SizedBox(height: 20),
 
+            // Price negotiation (inDrive style)
+            const Text('Your Price Offer (Rs per seat)',
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: AppTheme.textDark)),
+            const SizedBox(height: 4),
+            const Text('You can negotiate — driver will accept or counter',
+                style: TextStyle(fontSize: 12, color: AppTheme.textLight)),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              decoration: BoxDecoration(
+                color: AppTheme.bgWhite,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppTheme.border),
+              ),
+              child: Row(
+                children: [
+                  const Text("Rs", style: TextStyle(color: AppTheme.primary, fontSize: 14, fontWeight: FontWeight.w700)),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: TextFormField(
+                      initialValue: _offeredPrice > 0 ? _offeredPrice.toStringAsFixed(0) : '',
+                      keyboardType: TextInputType.number,
+                      style: const TextStyle(fontSize: 15, color: AppTheme.textDark),
+                      decoration: const InputDecoration(
+                        hintText: 'Enter your price',
+                        border: InputBorder.none,
+                      ),
+                      onChanged: (v) => setState(() => _offeredPrice = double.tryParse(v) ?? 0),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (ride.pricePerSeat > 0 && _offeredPrice > 0 && _offeredPrice != ride.pricePerSeat)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Text(
+                  _offeredPrice < ride.pricePerSeat
+                      ? '⚠️ Below driver\'s price — driver may reject'
+                      : '✅ Above driver\'s price',
+                  style: TextStyle(
+                      fontSize: 12,
+                      color: _offeredPrice < ride.pricePerSeat
+                          ? AppTheme.error : AppTheme.success),
+                ),
+              ),
+
+            const SizedBox(height: 20),
+
+            // Pickup address
             const Text('Your pickup point',
-              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: AppTheme.textDark)),
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: AppTheme.textDark)),
             const SizedBox(height: 8),
             TextFormField(
               initialValue: _pickupAddress,
@@ -192,6 +258,27 @@ class _BookingConfirmScreenState extends State<BookingConfirmScreen> {
   }
 }
 
+class _StepButton extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback? onTap;
+  const _StepButton({required this.icon, this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 44, height: 44,
+        decoration: BoxDecoration(
+          color: onTap != null ? AppTheme.primary : AppTheme.border,
+          shape: BoxShape.circle,
+        ),
+        child: Icon(icon, color: Colors.white, size: 20),
+      ),
+    );
+  }
+}
+
 class _SummaryRow extends StatelessWidget {
   final IconData icon;
   final String label;
@@ -208,13 +295,12 @@ class _SummaryRow extends StatelessWidget {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(label,
-                style: const TextStyle(fontSize: 13, color: AppTheme.textMedium)),
+              Text(label, style: const TextStyle(fontSize: 13, color: AppTheme.textMedium)),
               Flexible(
                 child: Text(value,
-                  textAlign: TextAlign.end,
-                  style: const TextStyle(
-                    fontSize: 13, fontWeight: FontWeight.w500, color: AppTheme.textDark)),
+                    textAlign: TextAlign.end,
+                    style: const TextStyle(
+                        fontSize: 13, fontWeight: FontWeight.w500, color: AppTheme.textDark)),
               ),
             ],
           ),
@@ -248,8 +334,8 @@ class _BookingSuccessView extends StatelessWidget {
               ),
               const SizedBox(height: 24),
               const Text('Request sent!',
-                style: TextStyle(
-                  fontSize: 24, fontWeight: FontWeight.w700, color: AppTheme.textDark)),
+                  style: TextStyle(
+                      fontSize: 24, fontWeight: FontWeight.w700, color: AppTheme.textDark)),
               const SizedBox(height: 10),
               Text(
                 'Your booking request has been sent to ${ride.driverName}.\nYou\'ll get notified when they accept.',
@@ -264,8 +350,7 @@ class _BookingSuccessView extends StatelessWidget {
               const SizedBox(height: 12),
               TextButton(
                 onPressed: () => context.push('/chat/${ride.id}'),
-                child: const Text('Contact',
-                  style: TextStyle(color: AppTheme.primary)),
+                child: const Text('Contact', style: TextStyle(color: AppTheme.primary)),
               ),
             ],
           ),

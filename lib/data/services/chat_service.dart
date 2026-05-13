@@ -1,6 +1,3 @@
-// lib/data/services/chat_service.dart
-// Firestore realtime chat per ride
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../core/constants/app_constants.dart';
 

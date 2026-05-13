@@ -73,7 +73,6 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
         children: [
           const SizedBox(height: 32),
 
-          // ── Icon ──────────────────────────────────────────────
           Center(
             child: Container(
               width: 72,
@@ -108,7 +107,6 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
           ),
           const SizedBox(height: 36),
 
-          // ── Error banner ──────────────────────────────────────
           if (_errorMessage != null) ...[
             Container(
               padding: const EdgeInsets.all(12),
@@ -132,7 +130,6 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
             const SizedBox(height: 16),
           ],
 
-          // ── Email field ───────────────────────────────────────
           const Text('Email',
               style: TextStyle(
                   fontSize: 14,
@@ -158,7 +155,6 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
 
           const SizedBox(height: 24),
 
-          // ── Send button ───────────────────────────────────────
           SizedBox(
             width: double.infinity,
             height: 52,

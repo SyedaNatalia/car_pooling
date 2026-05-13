@@ -17,6 +17,7 @@ class AppConstants {
   static const String rideActive = 'active';
   static const String rideCompleted = 'completed';
   static const String rideCancelled = 'cancelled';
+  static const String rideExpired   = 'expired';
 
   // ── Booking Status ────────────────────────────────────────────────
   static const String bookingPending = 'pending';
@@ -24,6 +25,7 @@ class AppConstants {
   static const String bookingRejected = 'rejected';
   static const String bookingCompleted = 'completed';
   static const String bookingCancelled = 'cancelled';
+  static const String bookingExpired = 'expired';
 
   // ── User Roles ────────────────────────────────────────────────────
   static const String roleEmployee = 'employee';

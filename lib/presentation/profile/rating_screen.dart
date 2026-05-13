@@ -1,6 +1,3 @@
-// lib/presentation/profile/rating_screen.dart
-// Rating screen shown after ride completes
-
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -151,9 +148,9 @@ class _RatingScreenState extends State<RatingScreen> {
                     ),
                     const SizedBox(height: 16),
 
-                    Text(
+                    const Text(
                       'How was your ride with',
-                      style: const TextStyle(
+                      style: TextStyle(
                           fontSize: 14, color: AppTheme.textMedium),
                     ),
                     const SizedBox(height: 4),
@@ -229,7 +226,6 @@ class _RatingScreenState extends State<RatingScreen> {
 
                     const Spacer(),
 
-                    // Submit
                     SizedBox(
                       width: double.infinity,
                       height: 52,
@@ -267,11 +263,11 @@ class _RatingScreenState extends State<RatingScreen> {
 
   String _ratingLabel(double r) {
     if (r == 0) return 'Tap to rate';
-    if (r <= 1) return 'Poor 😞';
-    if (r <= 2) return 'Fair 😐';
-    if (r <= 3) return 'Good 🙂';
-    if (r <= 4) return 'Great 😊';
-    return 'Excellent! 🌟';
+    if (r <= 1) return 'Poor';
+    if (r <= 2) return 'Fair';
+    if (r <= 3) return 'Good';
+    if (r <= 4) return 'Great';
+    return 'Excellent';
   }
 }
 
@@ -287,6 +283,7 @@ class _AlreadyRatedView extends StatelessWidget {
         Container(
           width: 80, height: 80,
           decoration: BoxDecoration(
+            // ignore: deprecated_member_use
             color: AppTheme.success.withOpacity(0.1),
             borderRadius: BorderRadius.circular(20),
           ),

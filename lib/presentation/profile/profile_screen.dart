@@ -1,3 +1,5 @@
+// ignore_for_file: deprecated_member_use
+
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -138,7 +140,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
                 const SizedBox(height: 20),
 
-                // Stats
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: [
@@ -169,7 +170,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
           ),
 
-          // ── Menu items ──────────────────────────────────────────
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.all(16),
@@ -182,20 +182,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     _MenuItem(
                       icon: Icons.history,
                       label: 'Ride history',
-                      // ← connected
                       onTap: () => context.push('/ride-history'),
                     ),
                     _MenuItem(
                       icon: Icons.bookmark_border,
                       label: 'My bookings',
-                      // ← connected
                       onTap: () => context.push('/my-bookings'),
                     ),
                     if (user.role != 'passenger')
                       _MenuItem(
                         icon: Icons.drive_eta,
                         label: 'My rides (as driver)',
-                        // ← connected
                         onTap: () => context.push('/my-rides'),
                       ),
                   ],
@@ -213,9 +210,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
 
                     _MenuItem(
+                      icon: Icons.directions_car_outlined,
+                      label: 'Edit car details',
+                      onTap: () => context.push('/edit-car-details'),
+                    ),
+
+                    _MenuItem(
                       icon: Icons.notifications_outlined,
                       label: 'Notifications',
-                      // ← connected
                       onTap: () => context.push('/notifications'),
                     ),
                   ],
@@ -244,13 +246,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     _MenuItem(
                       icon: Icons.help_outline,
                       label: 'Help & Support',
-                      // ← connected
                       onTap: () => context.push('/help'),
                     ),
                     _MenuItem(
                       icon: Icons.info_outline,
                       label: 'About',
-                      // ← connected
                       onTap: () => context.push('/about'),
                     ),
                     _MenuItem(

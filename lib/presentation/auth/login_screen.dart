@@ -11,7 +11,11 @@ class LoginScreen extends ConsumerStatefulWidget {
   ConsumerState<LoginScreen> createState() => _LoginScreenState();
 }
 
-class _LoginScreenState extends ConsumerState<LoginScreen> {
+class _LoginScreenState extends ConsumerState<LoginScreen>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _animCtrl;
+  late Animation<double> _fadeAnim;
+  late Animation<Offset> _slideAnim;
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
@@ -20,7 +24,20 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   String? _errorMessage;
 
   @override
+  void initState() {
+    super.initState();
+    _animCtrl = AnimationController(
+        duration: const Duration(milliseconds: 700), vsync: this);
+    _fadeAnim = Tween<double>(begin: 0, end: 1)
+        .animate(CurvedAnimation(parent: _animCtrl, curve: Curves.easeOut));
+    _slideAnim = Tween<Offset>(begin: const Offset(0, 0.15), end: Offset.zero)
+        .animate(CurvedAnimation(parent: _animCtrl, curve: Curves.easeOut));
+    _animCtrl.forward();
+  }
+
+  @override
   void dispose() {
+    _animCtrl.dispose();
     _emailController.dispose();
     _passwordController.dispose();
     super.dispose();
@@ -38,13 +55,41 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         email: _emailController.text.trim(),
         password: _passwordController.text,
       );
-      if (mounted) context.go('/home');
+      // Router's redirect will automatically navigate to /home
     } catch (e) {
-      setState(() =>
-          _errorMessage = e.toString().replaceAll('Exception: ', ''));
+      if (mounted) {
+        setState(() => _errorMessage = _friendlyError(e.toString()));
+      }
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  // User-friendly error messages
+  String _friendlyError(String raw) {
+    final msg = raw.replaceAll('Exception: ', '');
+    if (msg.contains('Network error') ||
+        msg.contains('network-request-failed') ||
+        msg.contains('SocketException')) {
+      return 'No internet connection. Please check your Wi-Fi or mobile data and try again.';
+    }
+    if (msg.contains('timeout') || msg.contains('TimeoutException')) {
+      return 'Connection timed out. Your internet may be slow — please try again.';
+    }
+    if (msg.contains('No account found')) {
+      return 'No account found with this email. Please sign up first.';
+    }
+    if (msg.contains('Incorrect password') || msg.contains('invalid-credential') ||
+        msg.contains('Invalid email or password')) {
+      return 'Incorrect email or password. Please check and try again.';
+    }
+    if (msg.contains('disabled')) {
+      return 'Your account has been disabled. Please contact support.';
+    }
+    if (msg.contains('Too many') || msg.contains('too-many-requests')) {
+      return 'Too many failed attempts. Please try again later.';
+    }
+    return msg.isNotEmpty ? msg : 'Login failed. Please try again.';
   }
 
   @override
@@ -52,7 +97,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     return Scaffold(
       backgroundColor: AppTheme.bgLight,
       body: SafeArea(
-        child: SingleChildScrollView(
+        child: FadeTransition(
+          opacity: _fadeAnim,
+          child: SlideTransition(
+            position: _slideAnim,
+            child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 24),
           child: Form(
             key: _formKey,
@@ -61,7 +110,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               children: [
                 const SizedBox(height: 48),
 
-                // ── Logo + Title ──────────────────────────────────
                 Center(
                   child: Column(
                     children: [
@@ -101,7 +149,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
                 const SizedBox(height: 40),
 
-                // ── Error banner ──────────────────────────────────
                 if (_errorMessage != null) ...[
                   Container(
                     padding: const EdgeInsets.all(12),
@@ -129,7 +176,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   const SizedBox(height: 16),
                 ],
 
-                // ── Email ─────────────────────────────────────────
                 const Text('Email',
                     style: TextStyle(
                         fontSize: 14,
@@ -154,7 +200,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
                 const SizedBox(height: 16),
 
-                // ── Password ──────────────────────────────────────
                 const Text('Password',
                     style: TextStyle(
                         fontSize: 14,
@@ -182,15 +227,18 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     ),
                   ),
                   validator: (v) {
-                    if (v == null || v.isEmpty)
+                    if (v == null || v.isEmpty) {
                       return 'Password is required';
+                    }
+                    if (v.length < 8) {
+                      return 'Password must be at least 8 characters';
+                    }
                     return null;
                   },
                 ),
 
                 const SizedBox(height: 8),
 
-                // ── Forgot password ───────────────────────────────
                 Align(
                   alignment: Alignment.centerRight,
                   child: TextButton(
@@ -204,7 +252,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
                 const SizedBox(height: 20),
 
-                // ── Sign In button ────────────────────────────────
                 SizedBox(
                   width: double.infinity,
                   height: 52,
@@ -223,7 +270,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
                 const SizedBox(height: 16),
 
-                // ── Sign up link ──────────────────────────────────
                 Center(
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
@@ -247,6 +293,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 const SizedBox(height: 24),
               ],
             ),
+          ),
+        ),
           ),
         ),
       ),

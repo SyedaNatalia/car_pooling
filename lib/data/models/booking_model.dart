@@ -6,8 +6,9 @@ class BookingModel {
   final String passengerId;
   final String passengerName;
   final String? passengerPhoto;
-  final String? passengerPhone;
   final LocationPoint pickupPoint;
+  final int seatsNeeded;       
+  final double offeredPrice;   
   final String status;
   final DateTime createdAt;
 
@@ -17,8 +18,9 @@ class BookingModel {
     required this.passengerId,
     required this.passengerName,
     this.passengerPhoto,
-    this.passengerPhone,
     required this.pickupPoint,
+    this.seatsNeeded = 1,
+    this.offeredPrice = 0,
     required this.status,
     required this.createdAt,
   });
@@ -26,25 +28,29 @@ class BookingModel {
   factory BookingModel.fromMap(Map<String, dynamic> data, String id) {
     return BookingModel(
       id: id,
-      rideId: data['rideId'] ?? '',
-      passengerId: data['passengerId'] ?? '',
+      rideId:        data['rideId']        ?? '',
+      passengerId:   data['passengerId']   ?? '',
       passengerName: data['passengerName'] ?? '',
-      passengerPhoto: data['passengerPhoto'],
-      passengerPhone: data['passengerPhone'],
-      pickupPoint: LocationPoint.fromMap(data['pickupPoint']),
-      status: data['status'] ?? 'pending',
-      createdAt: DateTime.parse(data['createdAt']),
+      passengerPhoto:data['passengerPhoto'],
+      pickupPoint:   LocationPoint.fromMap(data['pickupPoint'] ?? {}),
+      seatsNeeded:   data['seatsNeeded']   ?? 1,
+      offeredPrice:  (data['offeredPrice'] ?? 0.0).toDouble(),
+      status:        data['status']        ?? 'pending',
+      createdAt:     data['createdAt'] != null
+          ? DateTime.parse(data['createdAt'])
+          : DateTime.now(),
     );
   }
 
   Map<String, dynamic> toMap() => {
-    'rideId': rideId,
-    'passengerId': passengerId,
+    'rideId':        rideId,
+    'passengerId':   passengerId,
     'passengerName': passengerName,
-    'passengerPhoto': passengerPhoto,
-    'passengerPhone': passengerPhone,
-    'pickupPoint': pickupPoint.toMap(),
-    'status': status,
-    'createdAt': createdAt.toIso8601String(),
+    'passengerPhoto':passengerPhoto,
+    'pickupPoint':   pickupPoint.toMap(),
+    'seatsNeeded':   seatsNeeded,
+    'offeredPrice':  offeredPrice,
+    'status':        status,
+    'createdAt':     createdAt.toIso8601String(),
   };
 }

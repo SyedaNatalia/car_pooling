@@ -1,3 +1,5 @@
+// ignore_for_file: deprecated_member_use
+
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
@@ -7,12 +9,16 @@ import 'package:http/http.dart' as http;
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../core/theme/app_theme.dart';
 import '../../data/services/ride_service.dart';
 import '../../data/services/auth_service.dart';
 import '../../data/models/ride_model.dart';
 
-const String _kGoogleApiKey = 'AIzaSyBqIfdzqfPN8JIcLkEaGObApnn5JKk-BZI';
+import '../../core/constants/env_config.dart';
+
+String get _kGoogleApiKey => EnvConfig.googleMapsApiKey;
 
 class _ResolvedLocation {
   final String address;
@@ -31,6 +37,8 @@ class _OfferRideScreenState extends State<OfferRideScreen> {
   final _formKey = GlobalKey<FormState>();
   int _step = 0;
   bool _isLoading = false;
+  bool _hasActiveRide = false;
+  String? _activeRideId;
 
   // Map
   GoogleMapController? _mapController;
@@ -56,23 +64,58 @@ class _OfferRideScreenState extends State<OfferRideScreen> {
   String _lastQuery = '';
   bool _isLoadingLocation = false;
 
-  // Step 2 fields
   DateTime _departureTime = DateTime.now().add(const Duration(hours: 1));
-  int _totalSeats = 3;
+  int _totalSeats = 1;
+  double _pricePerSeat = 0;
+  String _carName  = ''; 
+  String _carColor = '';
+  String _carPlate = '';
 
-  // FIX: ride type selection
-  String _selectedRideType = 'economy';
-
-  static const _rideTypes = [
-    {'id': 'economy', 'label': 'Economy',  'asset': 'assets/images/economy.JPG',  'desc': 'Budget friendly'},
-    {'id': 'comfort', 'label': 'Comfort',  'asset': 'assets/images/comfort.JPG',  'desc': 'Extra comfort'},
-    {'id': 'premium', 'label': 'Premium',  'asset': 'assets/images/premium.AVIF', 'desc': 'Luxury ride'},
-  ];
 
   @override
   void initState() {
     super.initState();
     _getCurrentLocation();
+    _loadCarName();
+    _checkDriverActiveRide();
+  }
+
+
+
+  Future<void> _checkDriverActiveRide() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    if (uid.isEmpty) return;
+    try {
+      final hasActive = await RideService().hasActiveRide(uid);
+      if (hasActive) {
+        final snap = await FirebaseFirestore.instance
+            .collection('rides')
+            .where('driverId', isEqualTo: uid)
+            .where('status', whereIn: ['upcoming', 'active'])
+            .limit(1)
+            .get();
+        if (mounted) {
+          setState(() {
+            _hasActiveRide = true;
+            _activeRideId = snap.docs.isNotEmpty ? snap.docs.first.id : null;
+          });
+        }
+      } else if (mounted) {
+        setState(() { _hasActiveRide = false; _activeRideId = null; });
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _loadCarName() async {
+    final user = await AuthService().getCurrentUserProfile();
+    if (user != null && mounted) {
+      final car = user.carDetails;
+      setState(() {
+        _carName  = car != null ? '${car.make} ${car.model}'.trim() : '';
+        _carColor = car?.color ?? '';
+        _carPlate = car?.plateNumber ?? '';
+      });
+    }
   }
 
   @override
@@ -376,7 +419,7 @@ class _OfferRideScreenState extends State<OfferRideScreen> {
         driverId:     user.uid,
         driverName:   user.name,
         driverPhoto:  user.photoUrl,
-        driverPhone:  user.phone,        // FIX: phone save karo
+        driverPhone:  user.phone,       
         driverRating: user.rating,
         startPoint: LocationPoint(
           address: _startController.text.trim(),
@@ -392,8 +435,11 @@ class _OfferRideScreenState extends State<OfferRideScreen> {
         departureTime:  _departureTime,
         totalSeats:     _totalSeats,
         availableSeats: _totalSeats,
+        pricePerSeat:   _pricePerSeat,
+        carName:        _carName,
+        carColor:       _carColor,
+        carPlate:       _carPlate,
         status:         'upcoming',
-        rideType:       _selectedRideType,  // FIX: selected type save karo
         notes: _notesController.text.trim().isEmpty ? null : _notesController.text.trim(),
         createdAt: DateTime.now(),
       );
@@ -401,43 +447,38 @@ class _OfferRideScreenState extends State<OfferRideScreen> {
       final rideId = await RideService().createRide(ride);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Row(children: [
-              const Icon(Icons.check_circle_outline, color: Colors.white, size: 18),
-              const SizedBox(width: 10),
-              const Text(
-                'Ride published successfully!',
-                style: TextStyle(color: Colors.white, fontSize: 13),
-              ),
-            ]),
-            backgroundColor: AppTheme.success,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            duration: const Duration(seconds: 2),
-          ),
+          const SnackBar(content: Text('Ride published!'), backgroundColor: AppTheme.success),
         );
         context.push('/ride/$rideId/requests');
       }
     } catch (e) {
       if (mounted) {
-        // Extract a clean user-friendly message from the exception
-        String errMsg = e.toString();
-        if (errMsg.startsWith('Exception: ')) {
-          errMsg = errMsg.replaceFirst('Exception: ', '');
-        }
+        final raw = e.toString().replaceAll('Exception: ', '');
+        final isDuplicate = raw.contains('already published') ||
+            raw.contains('already have') ||
+            raw.contains('active ride');
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Row(children: [
-              const Icon(Icons.error_outline, color: Colors.white, size: 18),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  errMsg,
-                  style: const TextStyle(color: Colors.white, fontSize: 13),
+            content: Row(
+              children: [
+                Icon(
+                  isDuplicate ? Icons.info_outline : Icons.error_outline,
+                  color: Colors.white, size: 18,
                 ),
-              ),
-            ]),
-            backgroundColor: AppTheme.error,
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    isDuplicate
+                        ? 'You already have an active ride. Complete or cancel it before publishing a new one.'
+                        : raw.contains('network') || raw.contains('SocketException')
+                            ? 'No internet connection. Please check your network and try again.'
+                            : raw.isNotEmpty ? raw : 'Could not publish ride. Please try again.',
+                    style: const TextStyle(fontSize: 13),
+                  ),
+                ),
+              ],
+            ),
+            backgroundColor: isDuplicate ? Colors.orange.shade700 : AppTheme.error,
             behavior: SnackBarBehavior.floating,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             duration: const Duration(seconds: 4),
@@ -449,7 +490,6 @@ class _OfferRideScreenState extends State<OfferRideScreen> {
     }
   }
 
-  // ── Step 1: Route ───────────────────────────────────────────────
   Widget _buildStep1() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -494,8 +534,8 @@ class _OfferRideScreenState extends State<OfferRideScreen> {
                     onTap: _getCurrentLocation,
                     child: Container(
                       width: 36, height: 36,
-                      decoration: BoxDecoration(color: Colors.white, shape: BoxShape.circle,
-                          boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 6)]),
+                      decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle,
+                          boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 6)]),
                       child: _isLoadingLocation
                           ? const Padding(padding: EdgeInsets.all(8),
                               child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.primary))
@@ -508,7 +548,7 @@ class _OfferRideScreenState extends State<OfferRideScreen> {
           ),
         ),
         const SizedBox(height: 20),
-        _FieldLabel(label: 'Start Location', icon: Icons.radio_button_checked, color: AppTheme.success),
+        const _FieldLabel(label: 'Start Location', icon: Icons.radio_button_checked, color: AppTheme.success),
         const SizedBox(height: 8),
         _LocationInputField(
           controller: _startController,
@@ -527,7 +567,7 @@ class _OfferRideScreenState extends State<OfferRideScreen> {
         const SizedBox(height: 16),
 
         if (_stopControllers.isNotEmpty) ...[
-          _FieldLabel(label: 'Stops (optional)', icon: Icons.add_location_alt_outlined, color: AppTheme.textLight),
+          const _FieldLabel(label: 'Stops (optional)', icon: Icons.add_location_alt_outlined, color: AppTheme.textLight),
           const SizedBox(height: 8),
           ..._stopControllers.asMap().entries.map((e) {
             final i       = e.key;
@@ -577,7 +617,7 @@ class _OfferRideScreenState extends State<OfferRideScreen> {
         ),
 
         const SizedBox(height: 8),
-        _FieldLabel(label: 'End Location', icon: Icons.location_on, color: AppTheme.error),
+        const _FieldLabel(label: 'End Location', icon: Icons.location_on, color: AppTheme.error),
         const SizedBox(height: 8),
         _LocationInputField(
           controller: _endController,
@@ -591,49 +631,112 @@ class _OfferRideScreenState extends State<OfferRideScreen> {
     );
   }
 
-  // ── Step 2: Ride details ─────────────────────────────────────────
+  // ─ Ride details ─────────────────────────────────────────
   Widget _buildStep2() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // FIX: Ride type selection with asset images
-        const Text('Ride Type',
+        const Text('Your Car',
             style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: AppTheme.textDark)),
-        const SizedBox(height: 12),
-        Row(
-          children: _rideTypes.map((rt) {
-            final selected = _selectedRideType == rt['id'];
-            return Expanded(
-              child: GestureDetector(
-                onTap: () => setState(() => _selectedRideType = rt['id']!),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 180),
-                  margin: const EdgeInsets.only(right: 8),
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: selected ? AppTheme.primary.withOpacity(0.08) : AppTheme.bgLight,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: selected ? AppTheme.primary : AppTheme.border,
-                      width: selected ? 2 : 1,
-                    ),
+        const SizedBox(height: 8),
+        Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: AppTheme.bgWhite,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: _carName.isEmpty ? AppTheme.error.withOpacity(0.4) : AppTheme.border,
+              width: _carName.isEmpty ? 1.5 : 1,
+            ),
+          ),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: _carName.isEmpty ? AppTheme.error.withOpacity(0.1) : AppTheme.primaryLight,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(Icons.directions_car,
+                    color: _carName.isEmpty ? AppTheme.error : AppTheme.primary, size: 20),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _carName.isNotEmpty
+                    ? Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(_carName,
+                              style: const TextStyle(
+                                  fontSize: 15, fontWeight: FontWeight.w600, color: AppTheme.textDark)),
+                          if (_carPlate.isNotEmpty)
+                            Text(_carPlate,
+                                style: const TextStyle(fontSize: 11, color: AppTheme.textMedium)),
+                        ],
+                      )
+                    : const Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Car info required',
+                              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppTheme.error)),
+                          Text('Please add your car details to continue',
+                              style: TextStyle(fontSize: 11, color: AppTheme.textMedium)),
+                        ],
+                      ),
+              ),
+              TextButton(
+                onPressed: () async {
+                  await context.push('/edit-car-details');
+                  _loadCarName();
+                },
+                child: Text(
+                  _carName.isEmpty ? 'Add Car' : 'Edit',
+                  style: TextStyle(
+                    color: _carName.isEmpty ? AppTheme.error : AppTheme.primary,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
                   ),
-                  child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                    Image.asset(rt['asset']!, height: 44, fit: BoxFit.contain,
-                        errorBuilder: (_, __, ___) => Icon(Icons.directions_car, size: 36,
-                            color: selected ? AppTheme.primary : AppTheme.textMedium)),
-                    const SizedBox(height: 4),
-                    Text(rt['label']!, style: TextStyle(
-                        fontSize: 12, fontWeight: FontWeight.w700,
-                        color: selected ? AppTheme.primary : AppTheme.textDark)),
-                    Text(rt['desc']!, style: const TextStyle(fontSize: 9, color: AppTheme.textLight),
-                        textAlign: TextAlign.center),
-                  ]),
                 ),
               ),
-            );
-          }).toList(),
+            ],
+          ),
         ),
+
+        const SizedBox(height: 24),
+        const Text('Price Per Seat (Rs)',
+            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: AppTheme.textDark)),
+        const SizedBox(height: 8),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          decoration: BoxDecoration(
+            color: AppTheme.bgWhite,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: AppTheme.border),
+          ),
+          child: Row(
+            children: [
+              const Text("Rs", style: TextStyle(color: AppTheme.primary, fontSize: 14, fontWeight: FontWeight.w700)),
+              const SizedBox(width: 8),
+              Expanded(
+                child: TextFormField(
+                  initialValue: _pricePerSeat > 0 ? _pricePerSeat.toStringAsFixed(0) : '',
+                  keyboardType: TextInputType.number,
+                  style: const TextStyle(fontSize: 15, color: AppTheme.textDark),
+                  decoration: const InputDecoration(
+                    hintText: 'e.g. 500',
+                    border: InputBorder.none,
+                  ),
+                  onChanged: (v) {
+                    setState(() => _pricePerSeat = double.tryParse(v) ?? 0);
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 6),
+        const Text('Riders can negotiate — leave 0 for free ride',
+            style: TextStyle(fontSize: 11, color: AppTheme.textLight)),
 
         const SizedBox(height: 24),
         const Text('Departure Time',
@@ -660,18 +763,22 @@ class _OfferRideScreenState extends State<OfferRideScreen> {
         ),
 
         const SizedBox(height: 24),
-        const Text('Available Seats',
+        const Text('Available Seats (Max 3)',
             style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: AppTheme.textDark)),
-        const SizedBox(height: 16),
+        const SizedBox(height: 6),
+        const Text('Maximum 3 passenger seats (excluding driver)',
+            style: TextStyle(fontSize: 11, color: AppTheme.textLight)),
+        const SizedBox(height: 12),
         Row(mainAxisAlignment: MainAxisAlignment.center, children: [
           _SeatButton(icon: Icons.remove, onTap: _totalSeats > 1 ? () => setState(() => _totalSeats--) : null),
           const SizedBox(width: 28),
           Column(children: [
-            Text('$_totalSeats', style: const TextStyle(fontSize: 44, fontWeight: FontWeight.w700, color: AppTheme.primary)),
+            Text('$_totalSeats', style: const TextStyle(
+                fontSize: 44, fontWeight: FontWeight.w700, color: AppTheme.primary)),
             const Text('seats', style: TextStyle(color: AppTheme.textMedium, fontSize: 13)),
           ]),
           const SizedBox(width: 28),
-          _SeatButton(icon: Icons.add, onTap: _totalSeats < 6 ? () => setState(() => _totalSeats++) : null),
+          _SeatButton(icon: Icons.add, onTap: _totalSeats < 3 ? () => setState(() => _totalSeats++) : null),
         ]),
 
         const SizedBox(height: 24),
@@ -690,9 +797,8 @@ class _OfferRideScreenState extends State<OfferRideScreen> {
     );
   }
 
-  // ── Step 3: Review ───────────────────────────────────────────────
+  // ── Review ───────────────────────────────────────────────
   Widget _buildReview() {
-    final rtInfo = _rideTypes.firstWhere((r) => r['id'] == _selectedRideType, orElse: () => _rideTypes.first);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -720,13 +826,14 @@ class _OfferRideScreenState extends State<OfferRideScreen> {
         const Text('Review your ride',
             style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: AppTheme.textDark)),
         const SizedBox(height: 16),
-        _ReviewRow(label: 'Type',      value: rtInfo['label']!),
-        _ReviewRow(label: 'From',      value: _startController.text),
+        if (_carName.isNotEmpty) _ReviewRow(label: 'Car', value: _carName),
+        _ReviewRow(label: 'From', value: _startController.text),
         if (_stopControllers.any((c) => c.text.isNotEmpty))
           _ReviewRow(label: 'Stops', value: _stopControllers.where((c) => c.text.isNotEmpty).map((c) => c.text).join(', ')),
         _ReviewRow(label: 'To',        value: _endController.text),
         _ReviewRow(label: 'Departure', value: DateFormat('EEE, MMM d • h:mm a').format(_departureTime)),
         _ReviewRow(label: 'Seats',     value: '$_totalSeats seats available'),
+        _ReviewRow(label: 'Price',     value: _pricePerSeat > 0 ? 'Rs ${_pricePerSeat.toStringAsFixed(0)} per seat' : 'Free'),
         if (_notesController.text.isNotEmpty)
           _ReviewRow(label: 'Notes', value: _notesController.text),
         const SizedBox(height: 16),
@@ -782,14 +889,85 @@ class _OfferRideScreenState extends State<OfferRideScreen> {
               padding: const EdgeInsets.all(20),
               child: _step == 0 ? _buildStep1() : _step == 1 ? _buildStep2() : _buildReview(),
             )),
+            // Active ride warning banner
+            if (_hasActiveRide)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.shade50,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.orange.shade200),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.warning_amber_rounded,
+                          color: Colors.orange, size: 18),
+                      const SizedBox(width: 8),
+                      const Expanded(
+                        child: Text(
+                          'You already have an active ride. Complete or cancel it before publishing a new one.',
+                          style: TextStyle(fontSize: 12, color: Colors.orange),
+                        ),
+                      ),
+                      if (_activeRideId != null) ...[
+                        const SizedBox(width: 8),
+                        GestureDetector(
+                          onTap: () => context.push('/ride/$_activeRideId/requests'),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 5),
+                            decoration: BoxDecoration(
+                              color: AppTheme.primary,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Text('View Ride',
+                                style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600)),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
               child: SizedBox(
                 width: double.infinity, height: 52,
                 child: ElevatedButton(
-                  onPressed: _isLoading ? null : () {
+                  onPressed: _isLoading || _hasActiveRide ? null : () {
                     if (_step < 2) {
                       if (_formKey.currentState!.validate()) {
+                        // Car info mandatory
+                        if (_step == 1 && _carName.isEmpty) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: const Row(children: [
+                                Icon(Icons.directions_car, color: Colors.white, size: 18),
+                                SizedBox(width: 10),
+                                Expanded(child: Text('Car information is required. Please add your car details in your profile.')),
+                              ]),
+                              backgroundColor: AppTheme.error,
+                              behavior: SnackBarBehavior.floating,
+                              margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              action: SnackBarAction(
+                                label: 'Add Car',
+                                textColor: Colors.white,
+                                onPressed: () async {
+                                  await context.push('/edit-car-details');
+                                  _loadCarName();
+                                },
+                              ),
+                            ),
+                          );
+                          return;
+                        }
                         setState(() { _activeField = null; _suggestions = []; _step++; });
                       }
                     } else {
@@ -917,4 +1095,121 @@ class _ReviewRow extends StatelessWidget {
       ]),
     ),
   );
+}
+
+// ── Passenger Active Booking Notice Sheet ────────────────────────────────────
+
+class _PassengerBookingNoticeSheet extends StatelessWidget {
+  final VoidCallback onGoToBooking;
+  final VoidCallback onDismiss;
+
+  const _PassengerBookingNoticeSheet({
+    required this.onGoToBooking,
+    required this.onDismiss,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+      decoration: BoxDecoration(
+        color: AppTheme.bgWhite,
+        borderRadius: BorderRadius.circular(24),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Handle bar
+          Container(
+            margin: const EdgeInsets.only(top: 12),
+            width: 40,
+            height: 4,
+            decoration: BoxDecoration(
+              color: AppTheme.border,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 20, 24, 28),
+            child: Column(
+              children: [
+                Container(
+                  width: 64,
+                  height: 64,
+                  decoration: const BoxDecoration(
+                    color: AppTheme.primaryLight,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.event_seat_rounded,
+                    color: AppTheme.primary,
+                    size: 30,
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                const Text(
+                  'You Have an Active Booking',
+                  style: TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
+                    color: AppTheme.textDark,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 10),
+
+                const Text(
+                  'You currently have an active ride booking. Please complete or cancel your booking before offering a new ride.',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: AppTheme.textMedium,
+                    height: 1.6,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 24),
+
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: onDismiss,
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppTheme.textMedium,
+                          side: const BorderSide(color: AppTheme.border),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12)),
+                          padding: const EdgeInsets.symmetric(vertical: 13),
+                        ),
+                        child: const Text('Dismiss',
+                            style: TextStyle(fontWeight: FontWeight.w600)),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: onGoToBooking,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppTheme.primary,
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12)),
+                          padding: const EdgeInsets.symmetric(vertical: 13),
+                        ),
+                        child: const Text('My Bookings',
+                            style: TextStyle(fontWeight: FontWeight.w600)),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }

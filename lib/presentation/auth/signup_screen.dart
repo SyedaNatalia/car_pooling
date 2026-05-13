@@ -56,16 +56,43 @@ class _SignupScreenState extends State<SignupScreen> {
         department: _selectedDepartment,
         role: _selectedRole,
       );
-      if (mounted) context.go('/home');
+      // Router's redirect will automatically navigate to /home
     } catch (e) {
-      setState(() =>
-          _errorMessage = e.toString().replaceAll('Exception: ', ''));
+      if (mounted) {
+        setState(() => _errorMessage = _friendlyError(e.toString()));
+      }
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  // ── Step 1: Personal Info ─────────────────────────────────────────
+  // User-friendly error messages
+  String _friendlyError(String raw) {
+    final msg = raw.replaceAll('Exception: ', '');
+    if (msg.contains('Network error') ||
+        msg.contains('network-request-failed') ||
+        msg.contains('SocketException')) {
+      return 'No internet connection. Please check your Wi-Fi or mobile data and try again.';
+    }
+    if (msg.contains('timeout') || msg.contains('TimeoutException')) {
+      return 'Connection timed out. Your internet may be slow — please try again.';
+    }
+    if (msg.contains('already exists') || msg.contains('email-already-in-use')) {
+      return 'An account already exists with this email. Please login or use a different email.';
+    }
+    if (msg.contains('weak-password') || msg.contains('at least 6') || msg.contains('at least 8')) {
+      return 'Password must be at least 8 characters long.';
+    }
+    if (msg.contains('invalid-email') || msg.contains('Invalid email')) {
+      return 'Please enter a valid email address.';
+    }
+    if (msg.contains('Too many') || msg.contains('too-many-requests')) {
+      return 'Too many failed attempts. Please try again later.';
+    }
+    return msg.isNotEmpty ? msg : 'Could not create account. Please try again.';
+  }
+
+  // ── Personal Info ─────────────────────────────────────────
   Widget _buildStep1() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -95,11 +122,16 @@ class _SignupScreenState extends State<SignupScreen> {
             prefixIcon:
                 Icon(Icons.email_outlined, color: AppTheme.textDark),
           ),
-          validator: (v) {
-            if (v == null || v.isEmpty) return 'Email is required';
-            if (!v.contains('@')) return 'Enter valid email';
-            return null;
-          },
+          // validator: (v) {
+          //   if (v == null || v.isEmpty) return 'Email is required';
+          //   if (!v.contains('@') || !v.contains('.')) return 'Enter a valid email address';
+          //   final allowed = ['ffc.com.pk', 'olive.com', 'sone.com', 'fojifoods.com'];
+          //   final lower = v.trim().toLowerCase();
+          //   if (!allowed.any((d) => lower.endsWith('@\$d'))) {
+          //     return 'Only company emails allowed\n(e.g. yourname@ffc.com.pk)';
+          //   }
+          //   return null;
+          // },
         ),
         const SizedBox(height: 16),
         _fieldLabel('Phone Number'),
@@ -120,7 +152,7 @@ class _SignupScreenState extends State<SignupScreen> {
     );
   }
 
-  // ── Step 2: Company, Department & Role (All Dropdowns) ────────────
+  // ── Company, Department & Role ────────────
   Widget _buildStep2() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -202,7 +234,6 @@ class _SignupScreenState extends State<SignupScreen> {
     );
   }
 
-  // ── Step 3: Password ──────────────────────────────────────────────
   Widget _buildStep3() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -230,7 +261,7 @@ class _SignupScreenState extends State<SignupScreen> {
           ),
           validator: (v) {
             if (v == null || v.isEmpty) return 'Password is required';
-            if (v.length < 6) return 'Minimum 6 characters required';
+            if (v.length < 8) return 'Password must be at least 8 characters';
             return null;
           },
         ),
@@ -258,8 +289,9 @@ class _SignupScreenState extends State<SignupScreen> {
           ),
           validator: (v) {
             if (v == null || v.isEmpty) return 'Please confirm password';
-            if (v != _passwordController.text)
+            if (v != _passwordController.text) {
               return 'Passwords do not match';
+            }
             return null;
           },
         ),
@@ -354,7 +386,6 @@ class _SignupScreenState extends State<SignupScreen> {
 
                 const SizedBox(height: 24),
 
-                // ── Error message ─────────────────────────────────
                 if (_errorMessage != null) ...[
                   Container(
                     padding: const EdgeInsets.all(12),
@@ -383,7 +414,6 @@ class _SignupScreenState extends State<SignupScreen> {
                   const SizedBox(height: 20),
                 ],
 
-                // ── Step content ──────────────────────────────────
                 AnimatedSwitcher(
                   duration: const Duration(milliseconds: 300),
                   child: Column(
@@ -398,7 +428,6 @@ class _SignupScreenState extends State<SignupScreen> {
 
                 const SizedBox(height: 32),
 
-                // ── Next / Submit button ──────────────────────────
                 SizedBox(
                   width: double.infinity,
                   height: 52,

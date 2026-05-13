@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'core/theme/app_theme.dart';
+import 'core/utils/connectivity_wrapper.dart';
 import 'core/router/app_router.dart';
 import 'firebase_options.dart';
 
@@ -41,6 +43,8 @@ void main() async {
     }
   });
 
+  await dotenv.load(fileName: ".env");
+
   runApp(const ProviderScope(child: MyApp()));
 }
 
@@ -55,6 +59,7 @@ class MyApp extends ConsumerWidget {
       theme: AppTheme.lightTheme,
       routerConfig: router,
       debugShowCheckedModeBanner: false,
+      builder: (context, child) => ConnectivityWrapper(child: child ?? const SizedBox()),
     );
   }
 }

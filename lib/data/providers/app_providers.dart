@@ -1,6 +1,3 @@
-// lib/data/providers/app_providers.dart
-// Riverpod providers — services, auth state, rides, bookings
-
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../services/auth_service.dart';
@@ -131,7 +128,7 @@ class BookingNotifier extends AsyncNotifier<void> {
 final bookingNotifierProvider =
     AsyncNotifierProvider<BookingNotifier, void>(BookingNotifier.new);
 
-/// Profile update notifier
+// Profile update notifier
 class ProfileNotifier extends AsyncNotifier<void> {
   @override
   Future<void> build() async {}

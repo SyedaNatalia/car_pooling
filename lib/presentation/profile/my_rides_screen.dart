@@ -1,26 +1,29 @@
+// ignore_for_file: deprecated_member_use
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/theme/shimmer_widget.dart';
 import '../../data/models/ride_model.dart';
+import '../../data/services/ride_service.dart';
+import '../widgets/animated_empty_state.dart';
 
 class MyRidesScreen extends StatelessWidget {
   const MyRidesScreen({super.key});
 
-  String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
-
-  // FIX: no orderBy — client-side sort
-  Stream<List<RideModel>> get _ridesStream => FirebaseFirestore.instance
-      .collection('rides')
-      .where('driverId', isEqualTo: FirebaseAuth.instance.currentUser?.uid ?? '')
-      .snapshots()
-      .map((s) {
-        final list = s.docs.map((d) => RideModel.fromMap(d.data(), d.id)).toList();
-        list.sort((a, b) => b.departureTime.compareTo(a.departureTime));
-        return list;
-      });
+  Stream<List<RideModel>> _ridesStream(String uid) =>
+      FirebaseFirestore.instance
+          .collection('rides')
+          .where('driverId', isEqualTo: uid)
+          .snapshots()
+          .map((s) {
+            final list = s.docs.map((d) => RideModel.fromMap(d.data(), d.id)).toList();
+            list.sort((a, b) => b.departureTime.compareTo(a.departureTime));
+            return list;
+          });
 
   @override
   Widget build(BuildContext context) {
@@ -33,12 +36,19 @@ class MyRidesScreen extends StatelessWidget {
           onPressed: () => context.pop(),
         ),
       ),
-      body: StreamBuilder<List<RideModel>>(
-        stream: _ridesStream,
-        builder: (context, snap) {
+      body: StreamBuilder<User?>(
+        stream: FirebaseAuth.instance.authStateChanges(),
+        builder: (context, authSnap) {
+          if (authSnap.connectionState == ConnectionState.waiting ||
+              authSnap.data == null) {
+            return const ShimmerRideList(count: 4);
+          }
+          final uid = authSnap.data!.uid;
+          return StreamBuilder<List<RideModel>>(
+            stream: _ridesStream(uid),
+            builder: (context, snap) {
           if (snap.connectionState == ConnectionState.waiting) {
-            return const Center(
-                child: CircularProgressIndicator(color: AppTheme.primary));
+            return const ShimmerRideList(count: 4);
           }
           if (snap.hasError) {
             return Center(
@@ -58,36 +68,10 @@ class MyRidesScreen extends StatelessWidget {
           final rides = snap.data ?? [];
 
           if (rides.isEmpty) {
-            return Center(
-              child: Column(mainAxisSize: MainAxisSize.min, children: [
-                Container(
-                  width: 72, height: 72,
-                  decoration: BoxDecoration(
-                    color: AppTheme.bgWhite,
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: AppTheme.border),
-                  ),
-                  child: const Icon(Icons.drive_eta, color: AppTheme.textLight, size: 36),
-                ),
-                const SizedBox(height: 16),
-                const Text("You haven't offered any rides",
-                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600,
-                        color: AppTheme.textDark)),
-                const SizedBox(height: 6),
-                // const Text('Tap below to create your first ride',
-                //     style: TextStyle(color: AppTheme.textMedium, fontSize: 13)),
-                // const SizedBox(height: 20),
-                // ElevatedButton.icon(
-                //   onPressed: () => context.push('/offer-ride'),
-                //   icon: const Icon(Icons.add, size: 18),
-                //   label: const Text('Offer a ride'),
-                //   style: ElevatedButton.styleFrom(
-                //     backgroundColor: AppTheme.primary, foregroundColor: Colors.white,
-                //     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                //     padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                //   ),
-                // ),
-              ]),
+            return const AnimatedEmptyState(
+              icon: Icons.drive_eta_outlined,
+              title: 'No rides offered yet',
+              subtitle: 'Your published rides will appear here.\nOffer a ride to get started!',
             );
           }
 
@@ -100,33 +84,35 @@ class MyRidesScreen extends StatelessWidget {
             padding: const EdgeInsets.all(16),
             children: [
               if (active.isNotEmpty) ...[
-                _SectionLabel(title: 'Active', color: AppTheme.primary),
+                const _SectionLabel(title: 'Active', color: AppTheme.primary),
                 const SizedBox(height: 8),
                 ...active.map((r) => Padding(padding: const EdgeInsets.only(bottom: 10),
                     child: _DriverRideCard(ride: r))),
                 const SizedBox(height: 8),
               ],
               if (upcoming.isNotEmpty) ...[
-                _SectionLabel(title: 'Upcoming', color: AppTheme.warning),
+                const _SectionLabel(title: 'Upcoming', color: AppTheme.warning),
                 const SizedBox(height: 8),
                 ...upcoming.map((r) => Padding(padding: const EdgeInsets.only(bottom: 10),
                     child: _DriverRideCard(ride: r))),
                 const SizedBox(height: 8),
               ],
               if (completed.isNotEmpty) ...[
-                _SectionLabel(title: 'Completed', color: AppTheme.success),
+                const _SectionLabel(title: 'Completed', color: AppTheme.success),
                 const SizedBox(height: 8),
                 ...completed.map((r) => Padding(padding: const EdgeInsets.only(bottom: 10),
                     child: _DriverRideCard(ride: r))),
                 const SizedBox(height: 8),
               ],
               if (cancelled.isNotEmpty) ...[
-                _SectionLabel(title: 'Cancelled / Expired', color: AppTheme.error),
+               const _SectionLabel(title: 'Cancelled / Expired', color: AppTheme.error),
                 const SizedBox(height: 8),
                 ...cancelled.map((r) => Padding(padding: const EdgeInsets.only(bottom: 10),
                     child: _DriverRideCard(ride: r))),
               ],
             ],
+          );
+        },
           );
         },
       ),
@@ -169,23 +155,6 @@ class _DriverRideCard extends StatelessWidget {
       case 'expired':   return 'Expired';
       case 'active':    return 'Active';
       default:          return 'Upcoming';
-    }
-  }
-
-  // FIX: safe rideType with fallback
-  String get _rideTypeLabel {
-    switch (ride.rideType) {
-      case 'comfort': return 'Comfort';
-      case 'premium': return 'Premium';
-      default:        return 'Economy';
-    }
-  }
-
-  String get _rideTypeAsset {
-    switch (ride.rideType) {
-      case 'comfort': return 'assets/images/comfort.JPG';
-      case 'premium': return 'assets/images/premium.AVIF';
-      default:        return 'assets/images/economy.JPG';
     }
   }
 
@@ -250,29 +219,39 @@ class _DriverRideCard extends StatelessWidget {
             const SizedBox(height: 10),
 
             Row(children: [
-              // FIX: asset image + ride type label
-              ClipRRect(
-                borderRadius: BorderRadius.circular(6),
-                child: Image.asset(_rideTypeAsset, width: 32, height: 24, fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => const Icon(Icons.directions_car,
-                        size: 20, color: AppTheme.textLight)),
-              ),
+              const Icon(Icons.directions_car_outlined, size: 16, color: AppTheme.textLight),
               const SizedBox(width: 6),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: AppTheme.primaryLight, borderRadius: BorderRadius.circular(8)),
-                child: Text(_rideTypeLabel,
-                    style: const TextStyle(fontSize: 11, color: AppTheme.primary,
-                        fontWeight: FontWeight.w500)),
+              Flexible(
+                child: Row(
+                  children: [
+                    if (ride.carName.isNotEmpty) ...[
+                      Flexible(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: AppTheme.primaryLight, borderRadius: BorderRadius.circular(8)),
+                          child: Text(ride.carName,
+                              maxLines: 1, overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontSize: 11, color: AppTheme.primary,
+                                  fontWeight: FontWeight.w500)),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                    ],
+                    if (ride.pricePerSeat > 0)
+                      Text('Rs ${ride.pricePerSeat.toStringAsFixed(0)}/seat',
+                          style: const TextStyle(fontSize: 11, color: AppTheme.success,
+                              fontWeight: FontWeight.w500)),
+                    const SizedBox(width: 8),
+                    const Icon(Icons.people_outline, size: 14, color: AppTheme.textLight),
+                    const SizedBox(width: 3),
+                    Text('$bookedSeats/${ride.totalSeats}',
+                        style: const TextStyle(fontSize: 11, color: AppTheme.textMedium)),
+                  ],
+                ),
               ),
-              const SizedBox(width: 10),
-              const Icon(Icons.people_outline, size: 15, color: AppTheme.textLight),
-              const SizedBox(width: 4),
-              Text('$bookedSeats/${ride.totalSeats} booked',
-                  style: const TextStyle(fontSize: 12, color: AppTheme.textMedium)),
               const Spacer(),
-              if (ride.status == 'upcoming')
+              if (ride.status == 'upcoming') ...[
                 TextButton(
                   onPressed: () => context.push('/ride/${ride.id}/requests'),
                   style: TextButton.styleFrom(
@@ -280,8 +259,108 @@ class _DriverRideCard extends StatelessWidget {
                     minimumSize: Size.zero, tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
                   child: const Text('Manage', style: TextStyle(fontSize: 12)),
-                )
-              else
+                ),
+                const SizedBox(width: 8),
+                GestureDetector(
+                  onTap: () async {
+                    final confirm = await showDialog<bool>(
+                      context: context,
+                      barrierDismissible: false,
+                      builder: (_) => AlertDialog(
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        title: const Row(
+                          children: [
+                            Icon(Icons.directions_car_outlined, color: AppTheme.error, size: 22),
+                            SizedBox(width: 8),
+                            Text('Cancel Ride?', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                          ],
+                        ),
+                        content: const Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Are you sure you want to cancel this ride?',
+                                style: TextStyle(fontSize: 14, color: AppTheme.textDark)),
+                            SizedBox(height: 8),
+                            Text('• All passengers will be notified',
+                                style: TextStyle(fontSize: 12, color: AppTheme.textMedium)),
+                            Text('• All bookings will be cancelled',
+                                style: TextStyle(fontSize: 12, color: AppTheme.textMedium)),
+                            Text('• This action cannot be undone',
+                                style: TextStyle(fontSize: 12, color: AppTheme.error)),
+                          ],
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(context, false),
+                            child: const Text('No, Keep It', style: TextStyle(color: AppTheme.textMedium)),
+                          ),
+                          ElevatedButton(
+                            onPressed: () => Navigator.pop(context, true),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppTheme.error,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            ),
+                            child: const Text('Yes, Cancel'),
+                          ),
+                        ],
+                      ),
+                    );
+                    if (confirm == true && context.mounted) {
+                      // 5-minute cancel window for driver
+                      final minutesSinceCreated = DateTime.now().difference(ride.createdAt).inMinutes;
+                      if (minutesSinceCreated > 5) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: const Row(children: [
+                              Icon(Icons.timer_off, color: Colors.white, size: 18),
+                              SizedBox(width: 10),
+                              Expanded(child: Text('Cancel window expired. Rides can only be cancelled within 5 minutes of publishing.')),
+                            ]),
+                            backgroundColor: AppTheme.warning,
+                            behavior: SnackBarBehavior.floating,
+                            margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            duration: const Duration(seconds: 4),
+                          ),
+                        );
+                        return;
+                      }
+                      try {
+                        await RideService().cancelRide(ride.id);
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Ride cancelled. All passengers have been notified.'),
+                            backgroundColor: AppTheme.success,
+                            behavior: SnackBarBehavior.floating,
+                          ));
+                        }
+                      } catch (e) {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Error: $e'),
+                            backgroundColor: AppTheme.error,
+                            behavior: SnackBarBehavior.floating,
+                            margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          ));
+                        }
+                      }
+                    }
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: AppTheme.error.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Text('Cancel',
+                        style: TextStyle(fontSize: 12, color: AppTheme.error, fontWeight: FontWeight.w600)),
+                  ),
+                ),
+              ] else
                 const Icon(Icons.arrow_forward_ios, size: 12, color: AppTheme.textLight),
             ]),
           ],

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../core/theme/app_theme.dart';
 import '../../data/services/chat_service.dart';
@@ -22,6 +23,7 @@ class _ChatScreenState extends State<ChatScreen> {
   final _rideService     = RideService();
 
   RideModel? _ride;
+  String? _passengerPhone; 
   bool _sending = false;
 
   String get _myUid   => FirebaseAuth.instance.currentUser?.uid   ?? '';
@@ -43,7 +45,38 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Future<void> _loadRide() async {
     final ride = await _rideService.getRideById(widget.rideId);
-    if (mounted) setState(() => _ride = ride);
+    if (!mounted) return;
+    // Access control — only driver or accepted passengers can open chat
+    if (ride != null) {
+      final isDriver    = ride.driverId == _myUid;
+      final isPassenger = ride.passengerIds.contains(_myUid);
+      if (!isDriver && !isPassenger) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+              content: Text('You are not part of this ride.'),
+              backgroundColor: Colors.red,
+            ));
+            Navigator.of(context).pop();
+          }
+        });
+        return;
+      }
+    }
+    setState(() => _ride = ride);
+
+    if (ride != null && ride.driverId == _myUid && ride.passengerIds.isNotEmpty) {
+      try {
+        final passengerUid = ride.passengerIds.first;
+        final doc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(passengerUid)
+            .get();
+        if (mounted && doc.exists) {
+          setState(() => _passengerPhone = doc.data()?['phone'] as String?);
+        }
+      } catch (_) {}
+    }
   }
 
   Future<void> _send() async {
@@ -83,13 +116,14 @@ class _ChatScreenState extends State<ChatScreen> {
     });
   }
 
-  // ── SIM call ───────────────────────────────────────────────────────
-  Future<void> _callDriver() async {
-    final phone = _ride?.driverPhone;
+  Future<void> _callContact() async {
+    final phone = _isDriver ? _passengerPhone : _ride?.driverPhone;
     if (phone == null || phone.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Driver phone number not available'),
+        SnackBar(
+          content: Text(_isDriver
+              ? 'Passenger phone number not available'
+              : 'Driver phone number not available'),
           backgroundColor: AppTheme.error,
           behavior: SnackBarBehavior.floating,
         ),
@@ -138,8 +172,8 @@ class _ChatScreenState extends State<ChatScreen> {
           onPressed: () => Navigator.of(context).pop(),
         ),
         actions: [
-          // Call button – show to passengers to call driver
-          if (!_isDriver && _ride != null)
+          // Passenger calls driver, driver calls passenger
+          if (_ride != null)
             IconButton(
               icon: Container(
                 padding: const EdgeInsets.all(6),
@@ -149,8 +183,8 @@ class _ChatScreenState extends State<ChatScreen> {
                 ),
                 child: const Icon(Icons.phone, color: AppTheme.success, size: 20),
               ),
-              onPressed: _callDriver,
-              tooltip: 'Call driver',
+              onPressed: _callContact,
+              tooltip: _isDriver ? 'Call passenger' : 'Call driver',
             ),
           const SizedBox(width: 4),
         ],
@@ -229,7 +263,7 @@ class _ChatScreenState extends State<ChatScreen> {
               top: 8,
               bottom: MediaQuery.of(context).padding.bottom + 8,
             ),
-            decoration: BoxDecoration(
+            decoration: const BoxDecoration(
               color: Colors.white,
               border: Border(top: BorderSide(color: AppTheme.border)),
             ),
@@ -247,11 +281,11 @@ class _ChatScreenState extends State<ChatScreen> {
                           horizontal: 16, vertical: 10),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(24),
-                        borderSide: BorderSide(color: AppTheme.border),
+                        borderSide: const BorderSide(color: AppTheme.border),
                       ),
                       enabledBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(24),
-                        borderSide: BorderSide(color: AppTheme.border),
+                        borderSide: const BorderSide(color: AppTheme.border),
                       ),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(24),

@@ -29,7 +29,6 @@ class _RideHistoryScreenState extends State<RideHistoryScreen>
     super.dispose();
   }
 
-  // Sort client-side to avoid composite index requirement
   Stream<List<RideModel>> get _driverRides => FirebaseFirestore.instance
       .collection('rides')
       .where('driverId', isEqualTo: _uid)
@@ -80,7 +79,7 @@ class _RideHistoryScreenState extends State<RideHistoryScreen>
         controller: _tabController,
         children: [
           _RideList(stream: _passengerRides, emptyMsg: 'No rides taken yet'),
-          _RideList(stream: _driverRides, emptyMsg: 'No rides offered yet', tappable: false),
+          _RideList(stream: _driverRides,    emptyMsg: 'No rides offered yet'),
         ],
       ),
     );
@@ -90,8 +89,7 @@ class _RideHistoryScreenState extends State<RideHistoryScreen>
 class _RideList extends StatelessWidget {
   final Stream<List<RideModel>> stream;
   final String emptyMsg;
-  final bool tappable;
-  const _RideList({required this.stream, required this.emptyMsg, this.tappable = true});
+  const _RideList({required this.stream, required this.emptyMsg});
 
   @override
   Widget build(BuildContext context) {
@@ -140,7 +138,7 @@ class _RideList extends StatelessWidget {
           padding: const EdgeInsets.all(16),
           itemCount: rides.length,
           separatorBuilder: (_, __) => const SizedBox(height: 10),
-          itemBuilder: (_, i) => _RideCard(ride: rides[i], tappable: tappable),
+          itemBuilder: (_, i) => _RideCard(ride: rides[i]),
         );
       },
     );
@@ -149,8 +147,7 @@ class _RideList extends StatelessWidget {
 
 class _RideCard extends StatelessWidget {
   final RideModel ride;
-  final bool tappable;
-  const _RideCard({required this.ride, this.tappable = true});
+  const _RideCard({required this.ride});
 
   Color get _statusColor {
     switch (ride.status) {
@@ -163,9 +160,7 @@ class _RideCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: tappable ? () => context.push('/ride/${ride.id}') : null,
-      child: Container(
+    return Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: AppTheme.bgWhite,
@@ -224,7 +219,6 @@ class _RideCard extends StatelessWidget {
             const SizedBox(height: 10),
 
             Row(children: [
-              // Ride type badge
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
@@ -232,7 +226,7 @@ class _RideCard extends StatelessWidget {
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(
-                  ride.rideType[0].toUpperCase() + ride.rideType.substring(1),
+                  ride.carName.isNotEmpty ? ride.carName : ride.driverName,
                   style: const TextStyle(fontSize: 11, color: AppTheme.primary,
                       fontWeight: FontWeight.w500),
                 ),
@@ -247,7 +241,6 @@ class _RideCard extends StatelessWidget {
             ]),
           ],
         ),
-      ),
-    );
+      );
   }
 }

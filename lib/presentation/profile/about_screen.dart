@@ -1,4 +1,3 @@
-// lib/presentation/profile/about_screen.dart
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/theme/app_theme.dart';
@@ -85,18 +84,17 @@ class AboutScreen extends StatelessWidget {
               borderRadius: BorderRadius.circular(14),
               border: Border.all(color: AppTheme.border),
             ),
-            child: Column(children: [
+            child: const Column(children: [
               _InfoTile(icon: Icons.code, label: 'Built with', value: 'Flutter + Firebase'),
-              const Divider(height: 1, indent: 56, color: AppTheme.border),
+              Divider(height: 1, indent: 56, color: AppTheme.border),
               _InfoTile(icon: Icons.map_outlined, label: 'Maps', value: 'Google Maps Platform'),
-              const Divider(height: 1, indent: 56, color: AppTheme.border),
+              Divider(height: 1, indent: 56, color: AppTheme.border),
               _InfoTile(icon: Icons.verified_outlined, label: 'Version', value: '1.0.0 (Build 1)'),
             ]),
           ),
 
           const SizedBox(height: 16),
 
-          // Legal
           Container(
             decoration: BoxDecoration(
               color: AppTheme.bgWhite,

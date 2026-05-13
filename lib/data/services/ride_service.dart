@@ -18,8 +18,7 @@ class RideService {
   CollectionReference get _notifications =>
       _firestore.collection(AppConstants.notificationsCollection);
 
-  // ── FIX 1: Duplicate ride prevention ────────────────────────────
-  // Check karta hai k driver ka koi upcoming/active ride already exist karta hai
+  // ── Duplicate ride prevention ────────────────────────────
   Future<bool> hasActiveRide(String driverId) async {
     final snap = await _rides
         .where('driverId', isEqualTo: driverId)
@@ -31,9 +30,20 @@ class RideService {
     return snap.docs.isNotEmpty;
   }
 
-  // ── FIX 2: createRide with duplicate guard ───────────────────────
+  // ── Rider active booking check ───────────────────────────────
+  Future<bool> hasActivePendingBooking(String passengerId) async {
+    final snap = await _bookings
+        .where('passengerId', isEqualTo: passengerId)
+        .where('status', whereIn: [
+          AppConstants.bookingPending,
+          AppConstants.bookingAccepted,
+        ])
+        .get();
+    return snap.docs.isNotEmpty;
+  }
+
+  // ── createRide with duplicate guard ───────────────────────
   Future<String> createRide(RideModel ride) async {
-    // Publish karne se pehle check karo k already ek active ride hai
     final alreadyActive = await hasActiveRide(ride.driverId);
     if (alreadyActive) {
       throw Exception(
@@ -44,39 +54,356 @@ class RideService {
     return docRef.id;
   }
 
-  // ── FIX 3: searchRides — deduplicate + expire past rides ─────────
-  Future<List<RideModel>> searchRides({
+  Future<List<RideModel>> searchRidesByStatus({
+    required String status,
     required DateTime date,
     String? excludeDriverId,
+    String? fromCity,
+    String? toCity,
+    double? maxPrice,
+    int? seatsNeeded,
   }) async {
     final driverToExclude = excludeDriverId ?? _currentUid;
     final startOfDay = DateTime(date.year, date.month, date.day);
     final endOfDay   = DateTime(date.year, date.month, date.day, 23, 59, 59);
+    final now        = DateTime.now();
 
-    final snapshot = await _rides
-        .where('status', isEqualTo: AppConstants.rideUpcoming)
-        .where('departureTime',
-            isGreaterThanOrEqualTo: startOfDay.toIso8601String())
-        .where('departureTime',
-            isLessThanOrEqualTo: endOfDay.toIso8601String())
-        .orderBy('departureTime')
+    final snap = await _rides
+        .where('status', isEqualTo: status)
         .get();
 
-    final now = DateTime.now();
-
-    // Unique IDs track karo taake duplicates na aayein
-    final seen = <String>{};
-
-    return snapshot.docs
+    return snap.docs
         .map((d) => RideModel.fromMap(d.data() as Map<String, dynamic>, d.id))
         .where((r) {
-          if (seen.contains(r.id)) return false; // duplicate skip
-          seen.add(r.id);
-          return r.availableSeats > 0 &&
-              r.driverId != driverToExclude &&
-              r.departureTime.isAfter(now); // FIX: expired rides hide
+          if (r.availableSeats <= 0)         return false;
+          if (r.driverId == driverToExclude) return false;
+          if (r.departureTime.isBefore(startOfDay) ||
+              r.departureTime.isAfter(endOfDay)) {
+            return false;
+          }
+          if (status == 'upcoming' && !r.departureTime.isAfter(now)) return false;
+          if (maxPrice != null && maxPrice > 0 && r.pricePerSeat > maxPrice) return false;
+          if (seatsNeeded != null && seatsNeeded > 0 &&
+              r.availableSeats < seatsNeeded) {
+            return false;
+          }
+
+          final hasFrom = fromCity != null && fromCity.trim().isNotEmpty;
+          final hasTo   = toCity   != null && toCity.trim().isNotEmpty;
+          if (!hasFrom && !hasTo) return true;
+
+          bool fromOk = true, toOk = true;
+          if (hasFrom) {
+            final q = fromCity!.toLowerCase().trim();
+            fromOk  = r.startPoint.address.toLowerCase().contains(q) ||
+                      r.stops.any((s) => s.address.toLowerCase().contains(q));
+          }
+          if (hasTo) {
+            final q = toCity!.toLowerCase().trim();
+            toOk    = r.endPoint.address.toLowerCase().contains(q) ||
+                      r.stops.any((s) => s.address.toLowerCase().contains(q));
+          }
+          if (hasFrom && hasTo) return fromOk && toOk;
+          if (hasFrom) return fromOk;
+          if (hasTo)   return toOk;
+          return true;
         })
         .toList();
+  }
+
+  Future<List<RideModel>> searchRides({
+    required DateTime date,
+    String? excludeDriverId,
+    String? fromCity,
+    String? toCity,
+    double? maxPrice,
+    int? seatsNeeded,
+  }) async {
+    final driverToExclude = excludeDriverId ?? _currentUid;
+    final startOfDay = DateTime(date.year, date.month, date.day);
+    final endOfDay   = DateTime(date.year, date.month, date.day, 23, 59, 59);
+    final now        = DateTime.now();
+
+    final snapUpcoming = await _rides
+        .where('status', isEqualTo: AppConstants.rideUpcoming)
+        .get();
+    final snapActive = await _rides
+        .where('status', isEqualTo: AppConstants.rideActive)
+        .get();
+
+    final allDocs = [...snapUpcoming.docs, ...snapActive.docs];
+    final seen    = <String>{};
+
+    final results = allDocs
+        .map((d) => RideModel.fromMap(d.data() as Map<String, dynamic>, d.id))
+        .where((r) {
+          // Deduplicate
+          if (!seen.add(r.id)) return false;
+
+          // Must have seats
+          if (r.availableSeats <= 0) return false;
+
+          // Exclude own rides
+          if (r.driverId == driverToExclude) return false;
+
+          // Date filter — departure must fall on selected day
+          if (r.departureTime.isBefore(startOfDay) ||
+              r.departureTime.isAfter(endOfDay)) {
+            return false;
+          }
+
+          // Upcoming rides must still be in the future
+          if (r.status == AppConstants.rideUpcoming &&
+              !r.departureTime.isAfter(now)) {
+            return false;
+          }
+
+          // Price filter
+          if (maxPrice != null && maxPrice > 0 && r.pricePerSeat > maxPrice) {
+            return false;
+          }
+
+          // Seats filter
+          if (seatsNeeded != null &&
+              seatsNeeded > 0 &&
+              r.availableSeats < seatsNeeded) {
+            return false;
+          }
+
+          // ── Route matching ─────────────────────────────────────────
+          final hasFromFilter = fromCity != null && fromCity.trim().isNotEmpty;
+          final hasToFilter   = toCity   != null && toCity.trim().isNotEmpty;
+
+          if (!hasFromFilter && !hasToFilter) return true;
+
+          bool fromOk = true;
+          bool toOk   = true;
+
+          if (hasFromFilter) {
+            final query      = fromCity!.toLowerCase().trim();
+            final rStart     = r.startPoint.address.toLowerCase();
+            final startMatch = rStart.contains(query);
+            final stopMatch  = r.stops.any(
+              (s) => s.address.toLowerCase().contains(query),
+            );
+            fromOk = startMatch || stopMatch;
+          }
+
+          if (hasToFilter) {
+            final query     = toCity!.toLowerCase().trim();
+            final rEnd      = r.endPoint.address.toLowerCase();
+            final endMatch  = rEnd.contains(query);
+            final stopMatch = r.stops.any(
+              (s) => s.address.toLowerCase().contains(query),
+            );
+            toOk = endMatch || stopMatch;
+          }
+
+          if (hasFromFilter && hasToFilter) return fromOk && toOk;
+          if (hasFromFilter) return fromOk;
+          if (hasToFilter)   return toOk;
+          return true;
+        })
+        .toList();
+
+    results.sort((a, b) => a.departureTime.compareTo(b.departureTime));
+    return results;
+  }
+
+  Stream<List<RideModel>> streamSearchRides({
+    required DateTime date,
+    String? excludeDriverId,
+    String? fromCity,
+    String? toCity,
+    double? maxPrice,
+    int? seatsNeeded,
+  }) {
+    final driverToExclude = excludeDriverId ?? _currentUid;
+    final startOfDay = DateTime(date.year, date.month, date.day);
+    final endOfDay   = DateTime(date.year, date.month, date.day, 23, 59, 59);
+
+    return _rides
+        .where('status', whereIn: [
+          AppConstants.rideUpcoming,
+          AppConstants.rideActive,
+        ])
+        .snapshots()
+        .map((snap) {
+          final now  = DateTime.now();
+          final seen = <String>{};
+
+          final filtered = snap.docs
+              .map((d) => RideModel.fromMap(d.data() as Map<String, dynamic>, d.id))
+              .where((r) {
+                if (!seen.add(r.id))               return false;
+                if (r.availableSeats <= 0)          return false;
+                if (r.driverId == driverToExclude)  return false;
+                if (r.departureTime.isBefore(startOfDay) ||
+                    r.departureTime.isAfter(endOfDay)) {
+                  return false;
+                }
+                if (r.status == AppConstants.rideUpcoming &&
+                    !r.departureTime.isAfter(now)) {
+                  return false;
+                }
+                if (maxPrice != null && maxPrice > 0 &&
+                    r.pricePerSeat > maxPrice) {
+                  return false;
+                }
+                if (seatsNeeded != null && seatsNeeded > 0 &&
+                    r.availableSeats < seatsNeeded) {
+                  return false;
+                }
+
+                final hasFrom = fromCity != null && fromCity.trim().isNotEmpty;
+                final hasTo   = toCity   != null && toCity.trim().isNotEmpty;
+                if (!hasFrom && !hasTo) return true;
+
+                bool fromOk = true, toOk = true;
+                if (hasFrom) {
+                  final q = fromCity!.toLowerCase().trim();
+                  fromOk  = r.startPoint.address.toLowerCase().contains(q) ||
+                            r.stops.any((s) => s.address.toLowerCase().contains(q));
+                }
+                if (hasTo) {
+                  final q = toCity!.toLowerCase().trim();
+                  toOk    = r.endPoint.address.toLowerCase().contains(q) ||
+                            r.stops.any((s) => s.address.toLowerCase().contains(q));
+                }
+                if (hasFrom && hasTo) return fromOk && toOk;
+                if (hasFrom) return fromOk;
+                if (hasTo)   return toOk;
+                return true;
+              })
+              .toList();
+
+          filtered.sort((a, b) => a.departureTime.compareTo(b.departureTime));
+          return filtered;
+        });
+  }
+
+  // ── Passenger booking cancel ───────────────────────────────
+  Future<void> cancelBooking(String bookingId) async {
+    final bookingDoc = await _bookings.doc(bookingId).get();
+    if (!bookingDoc.exists) throw Exception('Booking not found');
+    final booking = BookingModel.fromMap(
+        bookingDoc.data() as Map<String, dynamic>, bookingDoc.id);
+
+    if (booking.status == AppConstants.bookingCancelled) return;
+
+    await _bookings.doc(bookingId).update({'status': AppConstants.bookingCancelled});
+
+    _cancelBookingBackground(booking);
+  }
+
+  void _cancelBookingBackground(BookingModel booking) {
+    Future(() async {
+      if (booking.status == AppConstants.bookingAccepted) {
+        try {
+          await _rides.doc(booking.rideId).update({
+            'availableSeats': FieldValue.increment(booking.seatsNeeded),
+            'passengerIds': FieldValue.arrayRemove([booking.passengerId]),
+          });
+        } catch (_) {
+        }
+      }
+
+      try {
+        final rideDoc = await _rides.doc(booking.rideId).get();
+        if (rideDoc.exists) {
+          final ride = RideModel.fromMap(
+              rideDoc.data() as Map<String, dynamic>, booking.rideId);
+          await _saveNotif(
+            userId: ride.driverId,
+            title: 'Booking Cancelled ❌',
+            body: '${booking.passengerName} has cancelled their booking for your ride.',
+            type: 'booking_cancelled',
+            rideId: booking.rideId,
+          );
+          await _saveNotif(
+            userId: booking.passengerId,
+            title: 'Booking Cancelled',
+            body: "Your booking for ${ride.driverName}'s ride has been cancelled.",
+            type: 'booking_cancelled_self',
+            rideId: booking.rideId,
+          );
+        }
+      } catch (_) {}
+    });
+  }
+
+  Future<void> autoExpireRides() async {
+    try {
+      final now = DateTime.now();
+
+      final snapUpcoming = await _rides
+          .where('status', isEqualTo: AppConstants.rideUpcoming)
+          .get();
+      final snapActive = await _rides
+          .where('status', isEqualTo: AppConstants.rideActive)
+          .get();
+
+      final expiredUpcoming = snapUpcoming.docs.where((doc) {
+        final ride = RideModel.fromMap(doc.data() as Map<String, dynamic>, doc.id);
+        return ride.departureTime.isBefore(now);
+      }).toList();
+
+      final expiredActive = snapActive.docs.where((doc) {
+        final ride = RideModel.fromMap(doc.data() as Map<String, dynamic>, doc.id);
+        return ride.departureTime.add(const Duration(hours: 2)).isBefore(now);
+      }).toList();
+
+      final allExpiredDocs = [...expiredUpcoming, ...expiredActive];
+      if (allExpiredDocs.isEmpty) return;
+
+      final rideBatch = _firestore.batch();
+      for (final doc in allExpiredDocs) {
+        rideBatch.update(_rides.doc(doc.id), {'status': AppConstants.rideExpired});
+      }
+      await rideBatch.commit();
+
+      for (final doc in allExpiredDocs) {
+        final ride = RideModel.fromMap(doc.data() as Map<String, dynamic>, doc.id);
+        try {
+          final bSnap = await _bookings
+              .where('rideId', isEqualTo: doc.id)
+              .where('status', whereIn: [
+                AppConstants.bookingPending,
+                AppConstants.bookingAccepted,
+              ])
+              .get();
+
+          if (bSnap.docs.isNotEmpty) {
+            final bBatch = _firestore.batch();
+            for (final b in bSnap.docs) {
+              bBatch.update(b.reference, {'status': AppConstants.bookingExpired});
+            }
+            await bBatch.commit();
+          }
+
+          // Passenger notifications
+          for (final pid in ride.passengerIds) {
+            if (pid != ride.driverId) {
+              await _saveNotif(
+                userId: pid,
+                title: 'Ride Expired',
+                body: 'Your booking for the ride with ${ride.driverName} has expired as the ride was not completed in time.',
+                type: 'ride_expired',
+                rideId: doc.id,
+              );
+            }
+          }
+          // Driver notification
+          await _saveNotif(
+            userId: ride.driverId,
+            title: 'Ride Expired',
+            body: 'Your ride has been automatically marked as expired as the departure time has passed.',
+            type: 'ride_expired',
+            rideId: doc.id,
+          );
+        } catch (_) {}
+      }
+    } catch (_) {}
   }
 
   Future<RideModel?> getRideById(String rideId) async {
@@ -127,15 +454,14 @@ class RideService {
 
     String title = '', body = '', type = 'ride_status';
     if (status == AppConstants.rideActive) {
-      title = 'Ride Started 🚗'; body = 'Your ride with ${ride.driverName} has started!'; type = 'ride_started';
+      title = 'Ride Started 🚗'; body = 'Your ride with ${ride.driverName} has started! Have a safe trip.'; type = 'ride_started';
     } else if (status == AppConstants.rideCompleted) {
-      title = 'Ride Completed ✅'; body = 'Ride complete. Please rate your experience.'; type = 'ride_completed';
+      title = 'Ride Completed ✅'; body = 'Your ride is complete. Please rate your experience.'; type = 'ride_completed';
     } else if (status == AppConstants.rideCancelled) {
-      title = 'Ride Cancelled ❌'; body = 'Your ride with ${ride.driverName} was cancelled.'; type = 'ride_cancelled';
+      title = 'Ride Cancelled ❌'; body = 'Your ride with ${ride.driverName} has been cancelled by the driver.'; type = 'ride_cancelled';
     }
     if (title.isNotEmpty) {
       for (final uid in ride.passengerIds) {
-        // FIX: driver ko apni ride ka notification na bhejo
         if (uid != ride.driverId) {
           await _saveNotif(userId: uid, title: title, body: body, type: type, rideId: rideId);
         }
@@ -159,12 +485,23 @@ class RideService {
     if (rideDoc.exists) {
       final ride = RideModel.fromMap(rideDoc.data() as Map<String, dynamic>, rideId);
       for (final uid in ride.passengerIds) {
-        // FIX: driver ko apni hi ride cancel ka notification na aye
         if (uid != ride.driverId) {
-          await _saveNotif(userId: uid, title: 'Ride Cancelled ❌',
-              body: 'Ride with ${ride.driverName} cancelled.', type: 'ride_cancelled', rideId: rideId);
+          await _saveNotif(
+            userId: uid,
+            title: 'Ride Cancelled ❌',
+            body: 'The driver ${ride.driverName} has cancelled the ride. Your booking has been cancelled automatically.',
+            type: 'ride_cancelled',
+            rideId: rideId,
+          );
         }
       }
+      await _saveNotif(
+        userId: ride.driverId,
+        title: 'Ride Cancelled',
+        body: 'Your ride has been cancelled successfully. All passengers have been notified.',
+        type: 'ride_cancelled_self',
+        rideId: rideId,
+      );
     }
   }
 
@@ -176,18 +513,26 @@ class RideService {
         .get();
     if (existing.docs.isNotEmpty) throw Exception('You have already booked this ride.');
 
+    final globalActive = await _bookings
+        .where('passengerId', isEqualTo: booking.passengerId)
+        .where('status', whereIn: [AppConstants.bookingPending, AppConstants.bookingAccepted])
+        .get();
+    if (globalActive.docs.isNotEmpty) {
+      throw Exception(
+        'You already have an active booking. Please complete or cancel it before joining a new ride.',
+      );
+    }
+
     final docRef = await _bookings.add(booking.toMap());
 
-    // FIX: Driver ko notify karo — lekin sirf tab jab passenger != driver
     final rideDoc = await _rides.doc(booking.rideId).get();
     if (rideDoc.exists) {
       final ride = RideModel.fromMap(rideDoc.data() as Map<String, dynamic>, booking.rideId);
-      // Agar passenger aur driver same nahi hain tabhi notification bheji jayegi
       if (ride.driverId != booking.passengerId) {
         await _saveNotif(
           userId: ride.driverId,
           title: 'New Booking Request 🙋',
-          body: '${booking.passengerName} wants to join your ride.',
+          body: '${booking.passengerName} has requested to join your ride.',
           type: 'booking_request',
           rideId: booking.rideId,
         );
@@ -226,13 +571,14 @@ class RideService {
 
     if (status == AppConstants.bookingAccepted) {
       batch.update(_rides.doc(booking.rideId), {
-        'availableSeats': FieldValue.increment(-1),
+        'availableSeats': FieldValue.increment(-booking.seatsNeeded),
         'passengerIds': FieldValue.arrayUnion([booking.passengerId]),
       });
     } else if (status == AppConstants.bookingRejected || status == AppConstants.bookingCancelled) {
+
       if (booking.status == AppConstants.bookingAccepted) {
         batch.update(_rides.doc(booking.rideId), {
-          'availableSeats': FieldValue.increment(1),
+          'availableSeats': FieldValue.increment(booking.seatsNeeded),
           'passengerIds': FieldValue.arrayRemove([booking.passengerId]),
         });
       }
@@ -241,13 +587,37 @@ class RideService {
 
     String title = '', body = '', type = 'booking_update';
     if (status == AppConstants.bookingAccepted) {
-      title = 'Booking Accepted ✅'; body = 'Your booking was accepted! Get ready.'; type = 'booking_accepted';
+      title = 'Booking Accepted ✅'; body = 'Your booking has been accepted! Get ready for your ride.'; type = 'booking_accepted';
     } else if (status == AppConstants.bookingRejected) {
-      title = 'Booking Not Accepted'; body = 'Your request was not accepted by the driver.'; type = 'booking_rejected';
+      title = 'Booking Not Accepted'; body = 'The driver has declined your booking request.'; type = 'booking_rejected';
     }
     if (title.isNotEmpty) {
       await _saveNotif(userId: booking.passengerId, title: title, body: body,
           type: type, rideId: booking.rideId);
+    }
+
+    if (status == AppConstants.bookingAccepted) {
+      String passengerPhone = '';
+      try {
+        final userDoc = await _firestore
+            .collection(AppConstants.usersCollection)
+            .doc(booking.passengerId)
+            .get();
+        passengerPhone = userDoc.data()?['phone'] as String? ?? '';
+      } catch (_) {}
+
+      final rideDoc2 = await _rides.doc(booking.rideId).get();
+      if (rideDoc2.exists) {
+        final ride2 = RideModel.fromMap(rideDoc2.data() as Map<String, dynamic>, booking.rideId);
+        await _saveNotif(
+          userId: ride2.driverId,
+          title: 'Ride Confirmed ✅',
+          body: '${booking.passengerName} is confirmed for your ride.',
+          type: 'booking_accepted_driver',
+          rideId: booking.rideId,
+          extraData: passengerPhone.isNotEmpty ? {'passengerPhone': passengerPhone} : null,
+        );
+      }
     }
   }
 
@@ -279,9 +649,10 @@ class RideService {
   Future<void> _saveNotif({
     required String userId, required String title,
     required String body, required String type, String? rideId,
+    Map<String, dynamic>? extraData,
   }) async {
     try {
-      await _notifications.add({
+      final data = {
         'userId':    userId,
         'title':     title,
         'body':      body,
@@ -289,7 +660,9 @@ class RideService {
         'rideId':    rideId,
         'isRead':    false,
         'createdAt': DateTime.now().toIso8601String(),
-      });
+      };
+      if (extraData != null) data.addAll(extraData);
+      await _notifications.add(data);
     } catch (_) {}
   }
 
@@ -311,12 +684,15 @@ class RideService {
     final userDoc = await _firestore.collection(AppConstants.usersCollection).doc(ratedId).get();
     if (userDoc.exists) {
       final d = userDoc.data()!;
-      final cur   = (d['rating'] ?? 0.0).toDouble();
-      final total = (d['totalRides'] ?? 0) as int;
-      final nt    = total + 1;
-      final nr    = ((cur * total) + rating) / nt;
-      batch.update(_firestore.collection(AppConstants.usersCollection).doc(ratedId),
-          {'rating': double.parse(nr.toStringAsFixed(1)), 'totalRides': nt});
+      final cur          = (d['rating'] ?? 0.0).toDouble();
+      final totalRatings = (d['totalRatings'] ?? 0) as int;
+      final newTotal     = totalRatings + 1;
+      final newRating    = ((cur * totalRatings) + rating) / newTotal;
+      batch.update(_firestore.collection(AppConstants.usersCollection).doc(ratedId), {
+        'rating': double.parse(newRating.toStringAsFixed(1)),
+        'totalRatings': newTotal,
+        // NOTE: totalRides is NOT touched here
+      });
     }
     await batch.commit();
   }

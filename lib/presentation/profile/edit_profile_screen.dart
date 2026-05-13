@@ -1,6 +1,6 @@
-// lib/presentation/profile/edit_profile_screen.dart
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../core/theme/app_theme.dart';
@@ -68,11 +68,18 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   }
 
   Future<void> _save() async {
+    // update their own profile
+    final currentUid = FirebaseAuth.instance.currentUser?.uid;
+    if (currentUid == null || _user == null || currentUid != _user!.uid) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Unauthorized: You can only edit your own profile.'),
+        backgroundColor: Colors.red));
+      return;
+    }
     if (!_formKey.currentState!.validate() || _user == null) return;
     setState(() => _isSaving = true);
 
     try {
-      // Frontend mode: Firebase Storage nahi — sirf mock update
       final updateData = <String, dynamic>{
         'name': _nameController.text.trim(),
         'phone': _phoneController.text.trim(),

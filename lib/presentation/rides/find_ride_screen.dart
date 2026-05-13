@@ -8,27 +8,15 @@ import 'package:http/http.dart' as http;
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../core/theme/app_theme.dart';
+import '../../data/services/ride_service.dart';
 
-const String _kGoogleApiKey = 'AIzaSyBqIfdzqfPN8JIcLkEaGObApnn5JKk-BZI';
+import '../../core/constants/env_config.dart';
 
-// ── Ride type model ────────────────────────────────────────────────
-class _RideType {
-  final String id;
-  final String label;
-  final String assetPath;
-  final double ratePerKm;
-  final int capacity;
-  String eta;
-  _RideType({
-    required this.id,
-    required this.label,
-    required this.assetPath,
-    required this.ratePerKm,
-    required this.capacity,
-    required this.eta,
-  });
-}
+String get _kGoogleApiKey => EnvConfig.googleMapsApiKey;
+
 
 class FindRideScreen extends StatefulWidget {
   const FindRideScreen({super.key});
@@ -48,7 +36,7 @@ class _FindRideScreenState extends State<FindRideScreen> {
   LatLng? _dropoffLatLng;
   DateTime  _selectedDate = DateTime.now();
   TimeOfDay _selectedTime = TimeOfDay.now();
-  String _selectedRideType = 'economy';
+
   bool   _isLoadingLocation = false;
 
   // ── Route info from Directions API ────────────────────────────────
@@ -66,32 +54,80 @@ class _FindRideScreenState extends State<FindRideScreen> {
   Timer?  _debounce;
   String  _lastQuery = '';
 
-  // ── Ride types ────────────────────────────────────────────────────
-  final List<_RideType> _rideTypes = [
-    _RideType(
-      id: 'economy', label: 'Economy',
-      assetPath: 'assets/images/economy.JPG',
-      ratePerKm: 18, capacity: 4, eta: '3 min',
-    ),
-    _RideType(
-      id: 'comfort', label: 'Comfort',
-      assetPath: 'assets/images/comfort.JPG',
-      ratePerKm: 28, capacity: 4, eta: '5 min',
-    ),
-    _RideType(
-      id: 'premium', label: 'Premium',
-      assetPath: 'assets/images/premium.AVIF',
-      ratePerKm: 45, capacity: 7, eta: '8 min',
-    ),
-  ];
+  // ── Active booking state ──────────────────────────────────────────
+  String? _activeBookingId;
+  String? _activeBookingStatus;
+  String? _activeBookingRideId;        
+  bool _checkingActiveBooking = false;
+  int _seatsNeeded = 1;
 
-  static const double _baseFare = 40.0;
-
-  // ─────────────────────────────────────────────────────────────────
   @override
   void initState() {
     super.initState();
     _getCurrentLocation();
+    _loadActiveBooking();
+    _checkNotDriver();
+  }
+
+  Future<void> _checkNotDriver() async {
+  }
+
+  Future<void> _loadActiveBooking() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    if (uid.isEmpty) return;
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('bookings')
+          .where('passengerId', isEqualTo: uid)
+          .where('status', whereIn: ['pending', 'accepted'])
+          .limit(1)
+          .get();
+      if (mounted && snap.docs.isNotEmpty) {
+        final doc = snap.docs.first;
+        setState(() {
+          _activeBookingId = doc.id;
+          _activeBookingStatus = doc.data()['status'] as String?;
+          _activeBookingRideId = doc.data()['rideId'] as String?;
+        });
+      } else if (mounted) {
+        setState(() { _activeBookingId = null; _activeBookingStatus = null; _activeBookingRideId = null; });
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _cancelActiveBooking() async {
+    if (_activeBookingId == null) return;
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Cancel Booking?'),
+        content: const Text('Are you sure you want to cancel your active booking?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('No')),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Yes, Cancel'),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true || !mounted) return;
+    try {
+      await RideService().cancelBooking(_activeBookingId!);
+      if (mounted) {
+        setState(() { _activeBookingId = null; _activeBookingStatus = null; _activeBookingRideId = null; });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Booking cancelled'), backgroundColor: Colors.green),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+      );
+      }
+    }
   }
 
   @override
@@ -116,6 +152,14 @@ class _FindRideScreenState extends State<FindRideScreen> {
       if (perm == LocationPermission.denied ||
           perm == LocationPermission.deniedForever) {
         setState(() => _isLoadingLocation = false);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Location permission denied. Please enable it in Settings.'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
         return;
       }
       final pos = await Geolocator.getCurrentPosition(
@@ -124,8 +168,17 @@ class _FindRideScreenState extends State<FindRideScreen> {
       setState(() { _pickupLatLng = ll; _isLoadingLocation = false; });
       _mapController?.animateCamera(CameraUpdate.newLatLngZoom(ll, 14));
       await _addressFromLatLng(ll, _fromController);
-    } catch (_) {
+    } catch (e) {
       setState(() => _isLoadingLocation = false);
+      // FIX 4: Friendly location error
+      if (mounted) {
+        final msg = e.toString().contains('network') || e.toString().contains('SocketException')
+            ? 'No internet — could not get location. Please check your Wi-Fi.'
+            : 'Could not detect location. Please try again.';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(msg), backgroundColor: Colors.orange),
+        );
+      }
     }
   }
 
@@ -141,7 +194,6 @@ class _FindRideScreenState extends State<FindRideScreen> {
     } catch (_) {}
   }
 
-  // ── Offer-ride style: one handler routes to _onFieldChanged ───────
   void _onFromChanged(String query) => _onFieldChanged(query, 'from');
   void _onToChanged(String query)   => _onFieldChanged(query, 'to');
 
@@ -222,7 +274,6 @@ class _FindRideScreenState extends State<FindRideScreen> {
     setState(() => _suggestions = results);
   }
 
-  // ── Resolve placeId → LatLng ───────────────────────────────────────
   Future<LatLng?> _resolvePlace(String placeId) async {
     try {
       final url = Uri.parse(
@@ -245,13 +296,13 @@ class _FindRideScreenState extends State<FindRideScreen> {
 
   // ── Select suggestion — offer-ride style ──────────────────────────
   Future<void> _selectSuggestion(Map<String, dynamic> s, bool isFrom) async {
-    // Immediately hide suggestions
     setState(() { _suggestions = []; _activeField = null; });
 
     LatLng? ll;
     if (s['placeId'] != null) ll = await _resolvePlace(s['placeId'] as String);
-    if (ll == null && s['lat'] != null)
+    if (ll == null && s['lat'] != null) {
       ll = LatLng(s['lat'] as double, s['lng'] as double);
+    }
 
     setState(() {
       if (isFrom) {
@@ -299,10 +350,7 @@ class _FindRideScreenState extends State<FindRideScreen> {
           setState(() {
             _routeDistanceKm  = distKm;
             _routeDurationSec = durSec;
-            for (final rt in _rideTypes) {
-              final offset = rt.id == 'economy' ? 3 : rt.id == 'comfort' ? 5 : 8;
-              rt.eta = '${etaMins + offset} min';
-            }
+            // no ride types to update
           });
 
           final points  = routes[0]['overview_polyline']['points'] as String;
@@ -393,21 +441,12 @@ class _FindRideScreenState extends State<FindRideScreen> {
   double _effectiveDistanceKm() =>
       _routeDistanceKm > 0 ? _routeDistanceKm : _haversineKm();
 
-  double _fareFor(String typeId) {
-    final rate = _rideTypes
-        .firstWhere((r) => r.id == typeId, orElse: () => _rideTypes.first)
-        .ratePerKm;
-    final dist = _effectiveDistanceKm();
-    return dist > 0 ? _baseFare + dist * rate : 0;
-  }
-
   String _formattedDuration() {
     if (_routeDurationSec == 0) return '';
     final mins = (_routeDurationSec / 60).round();
     return mins < 60 ? '$mins min' : '${mins ~/ 60}h ${mins % 60}m';
   }
 
-  // ── Date + Time ────────────────────────────────────────────────────
   Future<void> _pickDate() async {
     final d = await showDatePicker(
       context: context,
@@ -436,7 +475,6 @@ class _FindRideScreenState extends State<FindRideScreen> {
     if (t != null) setState(() => _selectedTime = t);
   }
 
-  // ── Search ────────────────────────────────────────────────────────
   void _search() {
     if (_fromController.text.isEmpty || _toController.text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -452,21 +490,107 @@ class _FindRideScreenState extends State<FindRideScreen> {
       'date': dt,
       'pickup': _fromController.text,
       'dropoff': _toController.text,
+      'fromCity': _fromController.text,
+      'toCity': _toController.text,
       'pickupLocation': _pickupLatLng,
       'dropoffLocation': _dropoffLatLng,
       'distance': _effectiveDistanceKm(),
-      'estimatedFare': _fareFor(_selectedRideType),
     });
   }
 
-  // ─────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     final hasRoute = _pickupLatLng != null && _dropoffLatLng != null;
     final dist     = _effectiveDistanceKm();
 
+    if (_activeBookingId != null) {
+      return Scaffold(
+        backgroundColor: AppTheme.bgLight,
+        appBar: AppBar(
+          title: const Text('Find a Ride'),
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back_ios_new, size: 18),
+            onPressed: () => context.go('/home'),
+          ),
+        ),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(32),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 80, height: 80,
+                  decoration: const BoxDecoration(
+                    color: AppTheme.primaryLight,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.directions_car_rounded,
+                      color: AppTheme.primary, size: 40),
+                ),
+                const SizedBox(height: 20),
+                const Text(
+                  'You Already Have a Ride',
+                  style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                      color: AppTheme.textDark),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  'Your booking is ${_activeBookingStatus == 'accepted' ? 'confirmed ✓' : 'pending approval'}. Cancel it first to search for a new ride.',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                      fontSize: 14,
+                      color: AppTheme.textMedium,
+                      height: 1.5),
+                ),
+                const SizedBox(height: 28),
+                if (_activeBookingRideId != null)
+                  SizedBox(
+                    width: double.infinity,
+                    height: 50,
+                    child: ElevatedButton.icon(
+                      onPressed: () =>
+                          context.push('/ride/$_activeBookingRideId'),
+                      icon: const Icon(Icons.visibility_outlined, size: 18),
+                      label: const Text('View Your Ride',
+                          style: TextStyle(fontSize: 15)),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.primary,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)),
+                      ),
+                    ),
+                  ),
+                const SizedBox(height: 12),
+                // Cancel booking
+                SizedBox(
+                  width: double.infinity,
+                  height: 50,
+                  child: OutlinedButton.icon(
+                    onPressed: _cancelActiveBooking,
+                    icon: const Icon(Icons.cancel_outlined, size: 18,
+                        color: AppTheme.error),
+                    label: const Text('Cancel Booking',
+                        style: TextStyle(
+                            fontSize: 15, color: AppTheme.error)),
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: AppTheme.error),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12)),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
     return GestureDetector(
-      // Tap outside → hide suggestions (same as offer ride screen)
       onTap: () {
         FocusScope.of(context).unfocus();
         setState(() { _activeField = null; _suggestions = []; });
@@ -474,7 +598,6 @@ class _FindRideScreenState extends State<FindRideScreen> {
       child: Scaffold(
         body: Stack(
           children: [
-            // ── Full-screen map ────────────────────────────────
             GoogleMap(
               initialCameraPosition: CameraPosition(
                 target: _pickupLatLng ?? const LatLng(31.5204, 74.3587),
@@ -517,7 +640,7 @@ class _FindRideScreenState extends State<FindRideScreen> {
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(20),
-                      boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 8)],
+                      boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 8)],
                     ),
                     child: const Row(mainAxisSize: MainAxisSize.min, children: [
                       SizedBox(width: 14, height: 14,
@@ -529,13 +652,11 @@ class _FindRideScreenState extends State<FindRideScreen> {
                 ),
               ),
 
-            // ── Top search panel ───────────────────────────────
             Positioned(
               top: 0, left: 0, right: 0,
               child: SafeArea(
                 child: Column(
                   children: [
-                    // Search card
                     Container(
                       margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
                       decoration: BoxDecoration(
@@ -543,6 +664,7 @@ class _FindRideScreenState extends State<FindRideScreen> {
                         borderRadius: BorderRadius.circular(16),
                         boxShadow: [
                           BoxShadow(
+                            // ignore: deprecated_member_use
                             color: Colors.black.withOpacity(0.12),
                             blurRadius: 20, offset: const Offset(0, 4),
                           ),
@@ -618,7 +740,6 @@ class _FindRideScreenState extends State<FindRideScreen> {
                             onChanged: _onToChanged,
                           ),
 
-                          // Date + Time
                           Container(
                             padding: const EdgeInsets.fromLTRB(16, 8, 16, 14),
                             child: Row(
@@ -656,7 +777,6 @@ class _FindRideScreenState extends State<FindRideScreen> {
               ),
             ),
 
-            // ── My location FAB ────────────────────────────────
             Positioned(
               right: 16, bottom: 340,
               child: FloatingActionButton.small(
@@ -668,7 +788,6 @@ class _FindRideScreenState extends State<FindRideScreen> {
               ),
             ),
 
-            // ── Bottom sheet ───────────────────────────────────
             Positioned(
               bottom: 0, left: 0, right: 0,
               child: Container(
@@ -709,114 +828,67 @@ class _FindRideScreenState extends State<FindRideScreen> {
 
                     const SizedBox(height: 10),
 
-                    // Ride type cards
-                    SizedBox(
-                      height: 140,
-                      child: ListView.separated(
-                        scrollDirection: Axis.horizontal,
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        itemCount: _rideTypes.length,
-                        separatorBuilder: (_, __) => const SizedBox(width: 12),
-                        itemBuilder: (ctx, i) {
-                          final rt       = _rideTypes[i];
-                          final selected = _selectedRideType == rt.id;
-                          final fare     = _fareFor(rt.id);
-                          return GestureDetector(
-                            onTap: () => setState(() => _selectedRideType = rt.id),
-                            child: AnimatedContainer(
-                              duration: const Duration(milliseconds: 200),
-                              width: 118,
-                              padding: const EdgeInsets.all(10),
-                              decoration: BoxDecoration(
-                                color: selected
-                                    ? AppTheme.primary.withOpacity(0.08)
-                                    : AppTheme.bgLight,
-                                borderRadius: BorderRadius.circular(14),
-                                border: Border.all(
-                                  color: selected ? AppTheme.primary : AppTheme.border,
-                                  width: selected ? 2 : 1,
-                                ),
-                              ),
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  SizedBox(
-                                    height: 52,
-                                    child: Image.asset(
-                                      rt.assetPath,
-                                      fit: BoxFit.contain,
-                                      errorBuilder: (_, __, ___) => Icon(
-                                          Icons.directions_car, size: 44,
-                                          color: selected ? AppTheme.primary : AppTheme.textMedium),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 5),
-                                  Text(rt.label, style: TextStyle(
-                                    fontSize: 13, fontWeight: FontWeight.w700,
-                                    color: selected ? AppTheme.primary : AppTheme.textDark,
-                                  )),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    fare > 0 ? 'Rs. ${fare.toStringAsFixed(0)}' : 'Rs. ${rt.ratePerKm}/km',
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
-                                      color: selected ? AppTheme.primary : AppTheme.textMedium,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    '${rt.capacity} seats • ${rt.eta}',
-                                    style: const TextStyle(fontSize: 9, color: AppTheme.textLight),
-                                    textAlign: TextAlign.center,
-                                  ),
-                                ],
-                              ),
-                            ),
-                          );
-                        },
-                      ),
+                    // ── Seats needed filter ──────────────────────
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                      child: Row(children: [
+                        const Icon(Icons.event_seat_outlined, size: 18, color: AppTheme.textMedium),
+                        const SizedBox(width: 8),
+                        const Text('Seats needed:', style: TextStyle(fontSize: 13, color: AppTheme.textMedium)),
+                        const Spacer(),
+                        GestureDetector(
+                          onTap: _seatsNeeded > 1 ? () => setState(() => _seatsNeeded--) : null,
+                          child: Container(
+                            width: 28, height: 28,
+                            decoration: BoxDecoration(
+                              color: _seatsNeeded > 1 ? AppTheme.primary.withOpacity(0.1) : AppTheme.border,
+                              shape: BoxShape.circle),
+                            child: Icon(Icons.remove, size: 16,
+                                color: _seatsNeeded > 1 ? AppTheme.primary : AppTheme.textLight)),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 14),
+                          child: Text('$_seatsNeeded',
+                              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppTheme.textDark)),
+                        ),
+                        GestureDetector(
+                          onTap: _seatsNeeded < 3 ? () => setState(() => _seatsNeeded++) : null,
+                          child: Container(
+                            width: 28, height: 28,
+                            decoration: BoxDecoration(
+                              color: _seatsNeeded < 3 ? AppTheme.primary.withOpacity(0.1) : AppTheme.border,
+                              shape: BoxShape.circle),
+                            child: Icon(Icons.add, size: 16,
+                                color: _seatsNeeded < 3 ? AppTheme.primary : AppTheme.textLight)),
+                        ),
+                      ]),
                     ),
 
-                    // Fare summary
+                    // ── Distance info ─────────────────────────────
                     if (hasRoute)
-                      Container(
-                        margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                        decoration: BoxDecoration(
-                          color: AppTheme.bgLight,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: AppTheme.border),
-                        ),
-                        child: Row(
-                          children: [
-                            Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                              const Text('Estimated Fare',
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+                        child: Card(
+                          color: AppTheme.bgWhite, elevation: 0,
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              side: const BorderSide(color: AppTheme.border)),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                            child: Row(children: [
+                              const Icon(Icons.route_outlined, size: 18, color: AppTheme.primary),
+                              const SizedBox(width: 8),
+                              Text(
+                                '${dist.toStringAsFixed(1)} km${_formattedDuration().isNotEmpty ? "  ·  ${_formattedDuration()}" : ""}',
+                                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppTheme.textDark)),
+                              const Spacer(),
+                              const Text('Driver sets price',
                                   style: TextStyle(fontSize: 11, color: AppTheme.textLight)),
-                              Text(
-                                'Rs. ${_fareFor(_selectedRideType).toStringAsFixed(0)}',
-                                style: const TextStyle(
-                                    fontSize: 22, fontWeight: FontWeight.w800, color: AppTheme.primary),
-                              ),
                             ]),
-                            const Spacer(),
-                            Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-                              Text(
-                                '${dist.toStringAsFixed(1)} km'
-                                '${_formattedDuration().isNotEmpty ? " • ${_formattedDuration()}" : ""}',
-                                style: const TextStyle(
-                                    fontSize: 13, fontWeight: FontWeight.w600, color: AppTheme.textDark),
-                              ),
-                              Text(
-                                'Base Rs.$_baseFare + Rs.${_rideTypes.firstWhere((r) => r.id == _selectedRideType).ratePerKm}/km',
-                                style: const TextStyle(fontSize: 10, color: AppTheme.textLight),
-                              ),
-                            ]),
-                          ],
+                          ),
                         ),
                       ),
 
-                    // Search button
                     Padding(
                       padding: EdgeInsets.fromLTRB(
                           16, 12, 16, MediaQuery.of(context).padding.bottom + 16),
@@ -954,7 +1026,6 @@ class _LocationField extends StatelessWidget {
   }
 }
 
-// ── Date / time chip ───────────────────────────────────────────────
 class _DateTimeChip extends StatelessWidget {
   final IconData icon;
   final String label;

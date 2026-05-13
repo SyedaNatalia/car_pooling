@@ -1,22 +1,25 @@
+// 
+// ignore_for_file: deprecated_member_use
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/theme/shimmer_widget.dart';
 import '../../data/models/booking_model.dart';
 import '../../data/models/ride_model.dart';
+import '../../data/services/ride_service.dart';
+import '../widgets/animated_empty_state.dart';
 
 class MyBookingsScreen extends StatelessWidget {
   const MyBookingsScreen({super.key});
 
-  String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
-
-  // No orderBy to avoid composite index requirement — sort client-side
-  Stream<List<BookingModel>> get _bookingsStream =>
+  Stream<List<BookingModel>> _bookingsStream(String uid) =>
       FirebaseFirestore.instance
           .collection('bookings')
-          .where('passengerId', isEqualTo: _uid)
+          .where('passengerId', isEqualTo: uid)
           .snapshots()
           .map((s) {
             final list = s.docs
@@ -37,12 +40,19 @@ class MyBookingsScreen extends StatelessWidget {
           onPressed: () => context.pop(),
         ),
       ),
-      body: StreamBuilder<List<BookingModel>>(
-        stream: _bookingsStream,
-        builder: (context, snap) {
+      body: StreamBuilder<User?>(
+        stream: FirebaseAuth.instance.authStateChanges(),
+        builder: (context, authSnap) {
+          if (authSnap.connectionState == ConnectionState.waiting ||
+              authSnap.data == null) {
+            return const ShimmerRideList(count: 4);
+          }
+          final uid = authSnap.data!.uid;
+          return StreamBuilder<List<BookingModel>>(
+            stream: _bookingsStream(uid),
+            builder: (context, snap) {
           if (snap.connectionState == ConnectionState.waiting) {
-            return const Center(
-                child: CircularProgressIndicator(color: AppTheme.primary));
+            return const ShimmerRideList(count: 4);
           }
           if (snap.hasError) {
             return Center(
@@ -60,27 +70,10 @@ class MyBookingsScreen extends StatelessWidget {
           }
           final bookings = snap.data ?? [];
           if (bookings.isEmpty) {
-            return Center(
-              child: Column(mainAxisSize: MainAxisSize.min, children: [
-                Container(
-                  width: 72, height: 72,
-                  decoration: BoxDecoration(
-                    color: AppTheme.bgWhite,
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: AppTheme.border),
-                  ),
-                  child: const Icon(Icons.bookmark_border,
-                      color: AppTheme.textLight, size: 36),
-                ),
-                const SizedBox(height: 16),
-                const Text('No bookings yet',
-                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600,
-                        color: AppTheme.textDark)),
-                const SizedBox(height: 6),
-                const Text('Your ride bookings will appear here',
-                    style: TextStyle(color: AppTheme.textMedium, fontSize: 13)),
-                const SizedBox(height: 20),
-              ]),
+            return const AnimatedEmptyState(
+              icon: Icons.bookmark_border,
+              title: 'No bookings yet',
+              subtitle: 'Your ride bookings will appear here.\nSearch for rides to get started!',
             );
           }
           return RefreshIndicator(
@@ -91,6 +84,8 @@ class MyBookingsScreen extends StatelessWidget {
               separatorBuilder: (_, __) => const SizedBox(height: 10),
               itemBuilder: (_, i) => _BookingCard(booking: bookings[i]),
             ),
+          );
+        },
           );
         },
       ),
@@ -108,6 +103,7 @@ class _BookingCard extends StatefulWidget {
 class _BookingCardState extends State<_BookingCard> {
   RideModel? _ride;
   bool _loading = true;
+  bool _isCancelling = false;
 
   @override
   void initState() {
@@ -132,18 +128,39 @@ class _BookingCardState extends State<_BookingCard> {
     }
   }
 
+  // Agar ride ka departure time guzar gaya aur passenger ride join nahi hua
+  // toh chahe status kuch bhi ho — "Expired" dikhao
+  bool get _isExpiredByTime {
+    if (_ride == null) return false;
+    final isPastDeparture = DateTime.now().isAfter(_ride!.departureTime);
+    final notJoined = widget.booking.status == 'pending' ||
+        widget.booking.status == 'cancelled';
+    return isPastDeparture && notJoined;
+  }
+
   Color get _statusColor {
+    if (_isExpiredByTime) return const Color(0xFFF59E0B);
     switch (widget.booking.status) {
-      case 'accepted': return AppTheme.success;
-      case 'rejected': return AppTheme.error;
+      case 'accepted':  return AppTheme.success;
+      case 'rejected':  return AppTheme.error;
       case 'cancelled': return AppTheme.error;
-      default:         return AppTheme.warning;
+      case 'expired':   return const Color(0xFFF59E0B);
+      case 'completed': return AppTheme.success;
+      default:          return AppTheme.warning;
     }
   }
 
   String get _statusLabel {
-    final s = widget.booking.status;
-    return s[0].toUpperCase() + s.substring(1);
+    if (_isExpiredByTime) return 'Expired';
+    switch (widget.booking.status) {
+      case 'pending':   return 'Pending';
+      case 'accepted':  return 'Accepted';
+      case 'rejected':  return 'Rejected';
+      case 'cancelled': return 'Cancelled';
+      case 'expired':   return 'Expired';
+      case 'completed': return 'Completed';
+      default:          return widget.booking.status[0].toUpperCase() + widget.booking.status.substring(1);
+    }
   }
 
   @override
@@ -221,7 +238,6 @@ class _BookingCardState extends State<_BookingCard> {
               const Divider(height: 1, color: AppTheme.border),
               const SizedBox(height: 10),
 
-              // Departure time + driver
               Row(children: [
                 const Icon(Icons.access_time, size: 14, color: AppTheme.textLight),
                 const SizedBox(width: 4),
@@ -237,11 +253,25 @@ class _BookingCardState extends State<_BookingCard> {
                 Text('Driver: ${_ride!.driverName}',
                     style: const TextStyle(fontSize: 12, color: AppTheme.textMedium)),
                 const Spacer(),
-                Text(
-                  _ride!.rideType[0].toUpperCase() + _ride!.rideType.substring(1),
-                  style: const TextStyle(fontSize: 11, color: AppTheme.primary,
-                      fontWeight: FontWeight.w500),
-                ),
+                if (_ride!.carName.isNotEmpty)
+                  Text(
+                    _ride!.carName,
+                    style: const TextStyle(fontSize: 11, color: AppTheme.primary,
+                        fontWeight: FontWeight.w500),
+                  ),
+              ]),
+              const SizedBox(height: 6),
+              Row(children: [
+                const Icon(Icons.airline_seat_recline_normal, size: 14, color: AppTheme.textLight),
+                const SizedBox(width: 4),
+                Text('${widget.booking.seatsNeeded} seat${widget.booking.seatsNeeded != 1 ? 's' : ''}',
+                    style: const TextStyle(fontSize: 12, color: AppTheme.textMedium)),
+                if (widget.booking.offeredPrice > 0) ...[
+                  const SizedBox(width: 10),
+                  Text('Rs ${widget.booking.offeredPrice.toStringAsFixed(0)}/seat',
+                      style: const TextStyle(fontSize: 12, color: AppTheme.success,
+                          fontWeight: FontWeight.w500)),
+                ],
               ]),
             ] else
               const Text('Ride details unavailable',
@@ -249,7 +279,6 @@ class _BookingCardState extends State<_BookingCard> {
 
             const SizedBox(height: 8),
 
-            // Pickup point
             Row(children: [
               const Icon(Icons.my_location, size: 14, color: AppTheme.textLight),
               const SizedBox(width: 4),
@@ -261,6 +290,175 @@ class _BookingCardState extends State<_BookingCard> {
                 ),
               ),
             ]),
+
+            if (widget.booking.status == 'pending' || widget.booking.status == 'accepted') ...[
+              const SizedBox(height: 10),
+              const Divider(height: 1, color: AppTheme.border),
+              const SizedBox(height: 10),
+              Align(
+                alignment: Alignment.centerRight,
+                child: _isCancelling
+                    ? Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: AppTheme.error.withOpacity(0.05),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: AppTheme.error.withOpacity(0.2)),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            SizedBox(
+                              width: 12,
+                              height: 12,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 1.5,
+                                color: AppTheme.error,
+                              ),
+                            ),
+                            SizedBox(width: 6),
+                            Text(
+                              'Cancelling...',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: AppTheme.error,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                    : GestureDetector(
+                        onTap: () async {
+                          if (_isCancelling) return;
+
+                          final minutesSinceBooked = DateTime.now().difference(widget.booking.createdAt).inMinutes;
+                          if (minutesSinceBooked > 5) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: const Row(children: [
+                                  Icon(Icons.timer_off, color: Colors.white, size: 18),
+                                  SizedBox(width: 10),
+                                  Expanded(child: Text('Cancel expired. Bookings can only be cancelled within 5 minutes of booking.')),
+                                ]),
+                                backgroundColor: AppTheme.warning,
+                                behavior: SnackBarBehavior.floating,
+                                margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                duration: const Duration(seconds: 4),
+                              ),
+                            );
+                            return;
+                          }
+
+                          final confirm = await showDialog<bool>(
+                            context: context,
+                            barrierDismissible: false,
+                            builder: (_) => AlertDialog(
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16)),
+                              title: const Row(
+                                children: [
+                                  Icon(Icons.cancel_outlined,
+                                      color: AppTheme.error, size: 22),
+                                  SizedBox(width: 8),
+                                  Text('Cancel Booking?',
+                                      style: TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w700)),
+                                ],
+                              ),
+                              content: const Column(
+                                mainAxisSize: MainAxisSize.min,
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                      'Are you sure you want to cancel this booking?',
+                                      style: TextStyle(
+                                          fontSize: 14,
+                                          color: AppTheme.textDark)),
+                                  SizedBox(height: 8),
+                                  Text('• The driver will be notified',
+                                      style: TextStyle(
+                                          fontSize: 12,
+                                          color: AppTheme.textMedium)),
+                                  Text('• Your seat will be released',
+                                      style: TextStyle(
+                                          fontSize: 12,
+                                          color: AppTheme.textMedium)),
+                                ],
+                              ),
+                              actions: [
+                                TextButton(
+                                  onPressed: () =>
+                                      Navigator.pop(context, false),
+                                  child: const Text('No, Keep It',
+                                      style: TextStyle(
+                                          color: AppTheme.textMedium)),
+                                ),
+                                ElevatedButton(
+                                  onPressed: () =>
+                                      Navigator.pop(context, true),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: AppTheme.error,
+                                    shape: RoundedRectangleBorder(
+                                        borderRadius:
+                                            BorderRadius.circular(8)),
+                                  ),
+                                  child: const Text('Yes, Cancel'),
+                                ),
+                              ],
+                            ),
+                          );
+                          if (confirm == true && context.mounted) {
+                            setState(() => _isCancelling = true);
+                            try {
+                              await RideService()
+                                  .cancelBooking(widget.booking.id);
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: const Text(
+                                        'Booking cancelled. The driver has been notified.'),
+                                    backgroundColor: AppTheme.success,
+                                    behavior: SnackBarBehavior.floating,
+                                    margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                  ),
+                                );
+                              }
+                            } catch (e) {
+                              if (mounted) setState(() => _isCancelling = false);
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text('Error: $e'),
+                                    backgroundColor: AppTheme.error,
+                                    behavior: SnackBarBehavior.floating,
+                                    margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                  ),
+                                );
+                              }
+                            }
+                          }
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: AppTheme.error.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Text('Cancel Booking',
+                              style: TextStyle(
+                                  fontSize: 12,
+                                  color: AppTheme.error,
+                                  fontWeight: FontWeight.w600)),
+                        ),
+                      ),
+              ),
+            ],
           ],
         ),
       ),

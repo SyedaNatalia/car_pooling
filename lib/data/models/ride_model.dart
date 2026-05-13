@@ -3,16 +3,19 @@ class RideModel {
   final String driverId;
   final String driverName;
   final String? driverPhoto;
-  final String? driverPhone;      
+  final String? driverPhone;
   final double driverRating;
+  final String carName;          
+  final String carColor;         
+  final String carPlate;       
   final LocationPoint startPoint;
   final LocationPoint endPoint;
   final List<LocationPoint> stops;
   final DateTime departureTime;
   final int totalSeats;
   final int availableSeats;
+  final double pricePerSeat;   
   final String status;
-  final String rideType;          
   final String? notes;
   final List<String> passengerIds;
   final DateTime createdAt;
@@ -24,14 +27,17 @@ class RideModel {
     this.driverPhoto,
     this.driverPhone,
     required this.driverRating,
+    this.carName = '',
+    this.carColor = '',
+    this.carPlate = '',
     required this.startPoint,
     required this.endPoint,
     this.stops = const [],
     required this.departureTime,
     required this.totalSeats,
     required this.availableSeats,
+    this.pricePerSeat = 0,
     required this.status,
-    this.rideType = 'economy',
     this.notes,
     this.passengerIds = const [],
     required this.createdAt,
@@ -40,21 +46,24 @@ class RideModel {
   factory RideModel.fromMap(Map<String, dynamic> data, String id) {
     return RideModel(
       id: id,
-      driverId:     data['driverId']     ?? '',
-      driverName:   data['driverName']   ?? '',
-      driverPhoto:  data['driverPhoto'],
-      driverPhone:  data['driverPhone'],
-      driverRating: (data['driverRating'] ?? 0.0).toDouble(),
-      startPoint:   LocationPoint.fromMap(data['startPoint'] ?? {}),
-      endPoint:     LocationPoint.fromMap(data['endPoint']   ?? {}),
+      driverId:      data['driverId']      ?? '',
+      driverName:    data['driverName']    ?? '',
+      driverPhoto:   data['driverPhoto'],
+      driverPhone:   data['driverPhone'],
+      driverRating:  (data['driverRating'] ?? 0.0).toDouble(),
+      carName:       data['carName']       ?? '',
+      carColor:      data['carColor']      ?? '',
+      carPlate:      data['carPlate']      ?? '',
+      startPoint:    LocationPoint.fromMap(data['startPoint'] ?? {}),
+      endPoint:      LocationPoint.fromMap(data['endPoint']   ?? {}),
       stops: (data['stops'] as List<dynamic>? ?? [])
           .map((s) => LocationPoint.fromMap(s as Map<String, dynamic>))
           .toList(),
       departureTime: DateTime.parse(data['departureTime'] ?? DateTime.now().toIso8601String()),
-      totalSeats:    data['totalSeats']    ?? 4,
-      availableSeats:data['availableSeats']?? 4,
-      status:        data['status']        ?? 'upcoming',
-      rideType:      data['rideType']      ?? 'economy',
+      totalSeats:    data['totalSeats']     ?? 1,
+      availableSeats:data['availableSeats'] ?? 1,
+      pricePerSeat:  (data['pricePerSeat']  ?? 0.0).toDouble(),
+      status:        data['status']         ?? 'upcoming',
       notes:         data['notes'],
       passengerIds:  List<String>.from(data['passengerIds'] ?? []),
       createdAt: data['createdAt'] != null
@@ -69,14 +78,17 @@ class RideModel {
     'driverPhoto':   driverPhoto,
     'driverPhone':   driverPhone,
     'driverRating':  driverRating,
+    'carName':       carName,
+    'carColor':      carColor,
+    'carPlate':      carPlate,
     'startPoint':    startPoint.toMap(),
     'endPoint':      endPoint.toMap(),
     'stops':         stops.map((s) => s.toMap()).toList(),
     'departureTime': departureTime.toIso8601String(),
     'totalSeats':    totalSeats,
     'availableSeats':availableSeats,
+    'pricePerSeat':  pricePerSeat,
     'status':        status,
-    'rideType':      rideType,
     'notes':         notes,
     'passengerIds':  passengerIds,
     'createdAt':     createdAt.toIso8601String(),
@@ -85,7 +97,13 @@ class RideModel {
   RideModel copyWith({
     String? status,
     int? availableSeats,
+    int? totalSeats,
     List<String>? passengerIds,
+    double? pricePerSeat,
+    String? carName,
+    String? carColor,
+    String? carPlate,
+    String? notes,
   }) {
     return RideModel(
       id:             id,
@@ -94,16 +112,19 @@ class RideModel {
       driverPhoto:    driverPhoto,
       driverPhone:    driverPhone,
       driverRating:   driverRating,
+      carName:        carName        ?? this.carName,
+      carColor:       carColor       ?? this.carColor,
+      carPlate:       carPlate       ?? this.carPlate,
       startPoint:     startPoint,
       endPoint:       endPoint,
       stops:          stops,
       departureTime:  departureTime,
-      totalSeats:     totalSeats,
+      totalSeats:     totalSeats     ?? this.totalSeats,
       availableSeats: availableSeats ?? this.availableSeats,
-      status:         status ?? this.status,
-      rideType:       rideType,
-      notes:          notes,
-      passengerIds:   passengerIds ?? this.passengerIds,
+      pricePerSeat:   pricePerSeat   ?? this.pricePerSeat,
+      status:         status         ?? this.status,
+      notes:          notes          ?? this.notes,
+      passengerIds:   passengerIds   ?? this.passengerIds,
       createdAt:      createdAt,
     );
   }

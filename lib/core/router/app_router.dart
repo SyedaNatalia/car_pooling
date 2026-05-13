@@ -5,6 +5,8 @@ import 'package:car_pooling/presentation/profile/my_rides_screen.dart';
 import 'package:car_pooling/presentation/profile/notifications_screen.dart';
 import 'package:car_pooling/presentation/profile/ride_history_screen.dart';
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/providers/app_providers.dart';
@@ -23,33 +25,57 @@ import '../../presentation/rides/active_ride_screen.dart';
 import '../../presentation/booking/booking_confirm_screen.dart';
 import '../../presentation/profile/profile_screen.dart';
 import '../../presentation/profile/edit_profile_screen.dart';
+import '../../presentation/profile/edit_car_details_screen.dart';
 import '../../presentation/chat/chat_screen.dart';
 import '../../presentation/admin/admin_screen.dart';
 import '../../presentation/profile/rating_screen.dart';
 
 final appRouterProvider = Provider<GoRouter>((ref) {
-  // Listen to auth state for redirect
   final authNotifier = ValueNotifier<bool>(false);
 
   ref.listen(firebaseAuthStateProvider, (_, next) {
-    authNotifier.value = !authNotifier.value; // trigger refresh
+    authNotifier.value = !authNotifier.value;
   });
 
   return GoRouter(
     initialLocation: '/splash',
     refreshListenable: authNotifier,
-    redirect: (context, state) {
+    redirect: (context, state) async {
       final authState = ref.read(firebaseAuthStateProvider);
+
+      // Still loading — stay on splash, don't redirect yet
+      if (authState.isLoading) {
+        if (state.matchedLocation != '/splash') return '/splash';
+        return null;
+      }
+
       final isLoggedIn = authState.valueOrNull != null;
-      final isAuthRoute = state.matchedLocation.startsWith('/auth') ||
-          state.matchedLocation == '/splash';
+      final loc = state.matchedLocation;
+      final isAuthRoute = loc.startsWith('/auth');
+      final isSplash = loc == '/splash';
+
+      // On splash — redirect based on login state
+      if (isSplash) {
+        return isLoggedIn ? '/home' : '/auth/login';
+      }
 
       // Not logged in + not on auth page → go to login
       if (!isLoggedIn && !isAuthRoute) return '/auth/login';
 
       // Logged in + on auth page → go home
-      if (isLoggedIn && isAuthRoute && state.matchedLocation != '/splash') {
-        return '/home';
+      if (isLoggedIn && isAuthRoute) return '/home';
+
+      // Admin route — only role==admin can access /admin
+      if (loc == '/admin') {
+        try {
+          final uid = FirebaseAuth.instance.currentUser?.uid;
+          if (uid == null) return '/auth/login';
+          final doc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
+          final role = doc.data()?['role'] as String? ?? '';
+          if (role != 'admin') return '/home';
+        } catch (_) {
+          return '/home';
+        }
       }
 
       return null;
@@ -81,7 +107,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: '/ride-results',
         builder: (context, state) {
           final extra = state.extra as Map<String, dynamic>;
-          return RideResultsScreen(date: extra['date'] as DateTime);
+          return RideResultsScreen(
+            date: extra['date'] as DateTime,
+            fromCity: extra['fromCity'] as String?,
+            toCity: extra['toCity'] as String?,
+          );
         },
       ),
       GoRoute(
@@ -116,6 +146,12 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/edit-profile',
         builder: (_, __) => const EditProfileScreen(),
+      ),
+
+      // Car details edit
+      GoRoute(
+        path: '/edit-car-details',
+        builder: (_, __) => const EditCarDetailsScreen(),
       ),
 
       // Admin

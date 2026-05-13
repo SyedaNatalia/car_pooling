@@ -1,16 +1,23 @@
+// ignore_for_file: deprecated_member_use, use_build_context_synchronously
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/theme/shimmer_widget.dart';
+import '../widgets/animated_empty_state.dart';
 
-class NotificationsScreen extends StatelessWidget {
+class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({super.key});
+  @override
+  State<NotificationsScreen> createState() => _NotificationsScreenState();
+}
 
+class _NotificationsScreenState extends State<NotificationsScreen> {
   String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
 
-  // FIX: notifications collection, userId field se filter
   Stream<List<Map<String, dynamic>>> get _notifStream =>
       FirebaseFirestore.instance
           .collection('notifications')
@@ -18,11 +25,10 @@ class NotificationsScreen extends StatelessWidget {
           .snapshots()
           .map((s) {
             final docs = s.docs.map((d) => {'id': d.id, ...d.data()}).toList();
-            // Client-side sort (no composite index needed)
             docs.sort((a, b) {
               final ta = a['createdAt'] as String? ?? '';
               final tb = b['createdAt'] as String? ?? '';
-              return tb.compareTo(ta); // newest first
+              return tb.compareTo(ta);
             });
             return docs;
           });
@@ -51,15 +57,87 @@ class NotificationsScreen extends StatelessWidget {
         content: Text('All notifications marked as read'),
         backgroundColor: AppTheme.success,
         behavior: SnackBarBehavior.floating,
+        margin: EdgeInsets.fromLTRB(16, 0, 16, 8),
       ));
     }
   }
 
-  Future<void> _delete(String notifId) async {
-    await FirebaseFirestore.instance
-        .collection('notifications')
-        .doc(notifId)
-        .delete();
+  // 5-second UNDO
+  Future<void> _deleteWithUndo(BuildContext context, Map<String, dynamic> notif, String id) async {
+    final notifData = Map<String, dynamic>.from(notif)..remove('id');
+
+    await FirebaseFirestore.instance.collection('notifications').doc(id).delete();
+
+    if (!context.mounted) return;
+
+    final snackBarController = ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Row(children: [
+          Icon(Icons.delete_outline, color: Colors.white, size: 18),
+          SizedBox(width: 10),
+          Text('Notification deleted'),
+        ]),
+        backgroundColor: AppTheme.textDark,
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        duration: const Duration(seconds: 5),
+        action: SnackBarAction(
+          label: 'UNDO',
+          textColor: AppTheme.primary,
+          onPressed: () async {
+            // Restore the notification
+            try {
+              await FirebaseFirestore.instance.collection('notifications').add(notifData);
+            } catch (_) {}
+          },
+        ),
+      ),
+    );
+    await snackBarController.closed;
+  }
+
+  Future<void> _handleTap(
+    BuildContext context,
+    Map<String, dynamic> n,
+    String id,
+    bool isRead,
+  ) async {
+    if (!isRead) await _markRead(id);
+
+    final type   = n['type'] as String? ?? '';
+    final rideId = n['rideId'] as String?;
+
+    if (rideId == null || rideId.isEmpty) return;
+
+    if (type == 'ride_cancelled' ||
+        type == 'ride_cancelled_self' ||
+        type == 'booking_cancelled' ||
+        type == 'booking_cancelled_self' ||
+        type == 'booking_rejected') {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Row(children: [
+            Icon(Icons.info_outline, color: Colors.white, size: 18),
+            SizedBox(width: 10),
+            Text('This ride or booking has been cancelled.'),
+          ]),
+          backgroundColor: AppTheme.textMedium,
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+      );
+      return;
+    }
+
+    if (type == 'booking_request') {
+      context.push('/ride/$rideId/requests');
+    } else if (type == 'booking_accepted') {
+      context.push('/ride/$rideId');
+    } else {
+      context.push('/ride/$rideId');
+    }
   }
 
   @override
@@ -88,32 +166,16 @@ class NotificationsScreen extends StatelessWidget {
                 child: CircularProgressIndicator(color: AppTheme.primary));
           }
           if (snap.hasError) {
-            return Center(child: Text('Error: ${snap.error}',
-                style: const TextStyle(color: AppTheme.textMedium)));
+            return _buildErrorState(snap.error.toString());
           }
 
           final notifs = snap.data ?? [];
 
           if (notifs.isEmpty) {
-            return Center(
-              child: Column(mainAxisSize: MainAxisSize.min, children: [
-                Container(
-                  width: 72, height: 72,
-                  decoration: BoxDecoration(
-                      color: AppTheme.bgWhite,
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: AppTheme.border)),
-                  child: const Icon(Icons.notifications_none,
-                      color: AppTheme.textLight, size: 36),
-                ),
-                const SizedBox(height: 16),
-                const Text('No notifications yet',
-                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600,
-                        color: AppTheme.textDark)),
-                const SizedBox(height: 6),
-                const Text("You'll see ride updates here",
-                    style: TextStyle(color: AppTheme.textMedium, fontSize: 13)),
-              ]),
+            return const AnimatedEmptyState(
+              icon: Icons.notifications_none_outlined,
+              title: 'No notifications yet',
+              subtitle: "You'll see ride updates, booking\nconfirmations and alerts here.",
             );
           }
 
@@ -126,7 +188,6 @@ class NotificationsScreen extends StatelessWidget {
               final id     = n['id'] as String;
               final isRead = n['isRead'] == true;
               final type   = n['type'] as String? ?? '';
-              final rideId = n['rideId'] as String?;
               DateTime? createdAt;
               try {
                 if (n['createdAt'] != null) {
@@ -144,21 +205,11 @@ class NotificationsScreen extends StatelessWidget {
                     color: AppTheme.error,
                     borderRadius: BorderRadius.circular(14),
                   ),
-                  child: const Icon(Icons.delete_outline,
-                      color: Colors.white, size: 24),
+                  child: const Icon(Icons.delete_outline, color: Colors.white, size: 24),
                 ),
-                onDismissed: (_) => _delete(id),
+                onDismissed: (_) => _deleteWithUndo(context, n, id),
                 child: GestureDetector(
-                  onTap: () {
-                    if (!isRead) _markRead(id);
-                    if (rideId != null && rideId.isNotEmpty) {
-                      if (type == 'booking_request') {
-                        context.push('/ride/$rideId/requests');
-                      } else {
-                        context.push('/ride/$rideId');
-                      }
-                    }
-                  },
+                  onTap: () => _handleTap(context, n, id, isRead),
                   child: Container(
                     padding: const EdgeInsets.all(14),
                     decoration: BoxDecoration(
@@ -226,6 +277,43 @@ class NotificationsScreen extends StatelessWidget {
                                       fontSize: 11, color: AppTheme.textLight),
                                 ),
                               ],
+                              if (type == 'booking_request') ...[
+                                const SizedBox(height: 4),
+                                const Text('Tap to manage this booking request',
+                                    style: TextStyle(
+                                        fontSize: 11,
+                                        color: AppTheme.primary,
+                                        fontWeight: FontWeight.w500)),
+                              ],
+                              if (type == 'booking_accepted') ...[
+                                const SizedBox(height: 4),
+                                const Text('Tap to view ride details',
+                                    style: TextStyle(
+                                        fontSize: 11,
+                                        color: AppTheme.success,
+                                        fontWeight: FontWeight.w500)),
+                              ],
+                              // Message button — booking_accepted
+                              if (type == 'booking_accepted' || type == 'booking_accepted_driver') ...[
+                                const SizedBox(height: 10),
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: OutlinedButton.icon(
+                                    onPressed: () {
+                                      final rId = n['rideId'] as String? ?? '';
+                                      if (rId.isNotEmpty) context.push('/chat/$rId');
+                                    },
+                                    icon: const Icon(Icons.message_outlined, size: 15),
+                                    label: const Text('Message', style: TextStyle(fontSize: 12)),
+                                    style: OutlinedButton.styleFrom(
+                                      foregroundColor: AppTheme.primary,
+                                      side: BorderSide(color: AppTheme.primary.withOpacity(0.5)),
+                                      padding: const EdgeInsets.symmetric(vertical: 7),
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ],
                           ),
                         ),
@@ -241,51 +329,88 @@ class NotificationsScreen extends StatelessWidget {
     );
   }
 
+  // Internet error state
+  Widget _buildErrorState(String raw) {
+    final isNetwork = raw.contains('network') ||
+        raw.contains('unavailable') ||
+        raw.contains('SocketException') ||
+        raw.contains('connection');
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Container(
+            width: 72, height: 72,
+            decoration: BoxDecoration(
+              color: Colors.orange.shade50,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Icon(Icons.wifi_off_rounded, color: Colors.orange.shade600, size: 36),
+          ),
+          const SizedBox(height: 16),
+          const Text('Connection Problem',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: AppTheme.textDark)),
+          const SizedBox(height: 8),
+          Text(
+            isNetwork
+                ? 'No internet connection. Please check your Wi-Fi or mobile data.'
+                : 'Could not load notifications. Please try again later.',
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: AppTheme.textMedium, height: 1.5),
+          ),
+        ]),
+      ),
+    );
+  }
+
   IconData _iconFor(String type) {
     switch (type) {
-      case 'ride_status':     return Icons.directions_car;
-      case 'ride_cancelled':  return Icons.cancel_outlined;
-      case 'booking_request': return Icons.person_add_outlined;
-      case 'booking_update':  return Icons.check_circle_outline;
-      case 'booking_accepted':return Icons.check_circle_outline;
-      case 'booking_rejected':return Icons.cancel_outlined;
-      case 'ride_started':    return Icons.play_arrow;
-      case 'ride_completed':  return Icons.flag;
-      case 'new_message':     return Icons.chat_bubble_outline;
-      case 'message':         return Icons.chat_bubble_outline;
-      default:                return Icons.notifications_outlined;
+      case 'ride_status':      return Icons.directions_car;
+      case 'ride_cancelled':   return Icons.cancel_outlined;
+      case 'booking_request':  return Icons.person_add_outlined;
+      case 'booking_update':   return Icons.check_circle_outline;
+      case 'booking_accepted': return Icons.check_circle_outline;
+      case 'booking_accepted_driver': return Icons.check_circle_outline;
+      case 'booking_rejected': return Icons.cancel_outlined;
+      case 'ride_started':     return Icons.play_arrow;
+      case 'ride_completed':   return Icons.flag;
+      case 'new_message':      return Icons.chat_bubble_outline;
+      case 'message':          return Icons.chat_bubble_outline;
+      default:                 return Icons.notifications_outlined;
     }
   }
 
   Color _iconBg(String type) {
     switch (type) {
       case 'ride_status':
-      case 'ride_started':    return AppTheme.primary.withOpacity(0.1);
+      case 'ride_started':     return AppTheme.primary.withOpacity(0.1);
       case 'ride_cancelled':
-      case 'booking_rejected':return AppTheme.error.withOpacity(0.1);
-      case 'booking_request': return AppTheme.warning.withOpacity(0.1);
+      case 'booking_rejected': return AppTheme.error.withOpacity(0.1);
+      case 'booking_request':  return AppTheme.warning.withOpacity(0.1);
       case 'booking_update':
       case 'booking_accepted':
-      case 'ride_completed':  return AppTheme.success.withOpacity(0.1);
+      case 'booking_accepted_driver':
+      case 'ride_completed':   return AppTheme.success.withOpacity(0.1);
       case 'new_message':
-      case 'message':         return AppTheme.primary.withOpacity(0.1);
-      default:                return AppTheme.bgLight;
+      case 'message':          return AppTheme.primary.withOpacity(0.1);
+      default:                 return AppTheme.bgLight;
     }
   }
 
   Color _iconColor(String type) {
     switch (type) {
       case 'ride_status':
-      case 'ride_started':    return AppTheme.primary;
+      case 'ride_started':     return AppTheme.primary;
       case 'ride_cancelled':
-      case 'booking_rejected':return AppTheme.error;
-      case 'booking_request': return AppTheme.warning;
+      case 'booking_rejected': return AppTheme.error;
+      case 'booking_request':  return AppTheme.warning;
       case 'booking_update':
       case 'booking_accepted':
-      case 'ride_completed':  return AppTheme.success;
+      case 'booking_accepted_driver':
+      case 'ride_completed':   return AppTheme.success;
       case 'new_message':
-      case 'message':         return AppTheme.primary;
-      default:                return AppTheme.textMedium;
+      case 'message':          return AppTheme.primary;
+      default:                 return AppTheme.textMedium;
     }
   }
 
