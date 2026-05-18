@@ -5,9 +5,11 @@ class RideModel {
   final String? driverPhoto;
   final String? driverPhone;
   final double driverRating;
+  final String? driverGender;
   final String carName;          
   final String carColor;         
-  final String carPlate;       
+  final String carPlate;
+  final bool acAvailable;
   final LocationPoint startPoint;
   final LocationPoint endPoint;
   final List<LocationPoint> stops;
@@ -27,9 +29,11 @@ class RideModel {
     this.driverPhoto,
     this.driverPhone,
     required this.driverRating,
+    this.driverGender,
     this.carName = '',
     this.carColor = '',
     this.carPlate = '',
+    this.acAvailable = false,
     required this.startPoint,
     required this.endPoint,
     this.stops = const [],
@@ -51,9 +55,11 @@ class RideModel {
       driverPhoto:   data['driverPhoto'],
       driverPhone:   data['driverPhone'],
       driverRating:  (data['driverRating'] ?? 0.0).toDouble(),
+      driverGender:  data['driverGender'],
       carName:       data['carName']       ?? '',
       carColor:      data['carColor']      ?? '',
       carPlate:      data['carPlate']      ?? '',
+      acAvailable:   data['acAvailable']   ?? false,
       startPoint:    LocationPoint.fromMap(data['startPoint'] ?? {}),
       endPoint:      LocationPoint.fromMap(data['endPoint']   ?? {}),
       stops: (data['stops'] as List<dynamic>? ?? [])
@@ -78,9 +84,11 @@ class RideModel {
     'driverPhoto':   driverPhoto,
     'driverPhone':   driverPhone,
     'driverRating':  driverRating,
+    'driverGender':  driverGender,
     'carName':       carName,
     'carColor':      carColor,
     'carPlate':      carPlate,
+    'acAvailable':   acAvailable,
     'startPoint':    startPoint.toMap(),
     'endPoint':      endPoint.toMap(),
     'stops':         stops.map((s) => s.toMap()).toList(),
@@ -103,7 +111,9 @@ class RideModel {
     String? carName,
     String? carColor,
     String? carPlate,
+    bool? acAvailable,
     String? notes,
+    String? driverGender,
   }) {
     return RideModel(
       id:             id,
@@ -112,9 +122,11 @@ class RideModel {
       driverPhoto:    driverPhoto,
       driverPhone:    driverPhone,
       driverRating:   driverRating,
+      driverGender:   driverGender   ?? this.driverGender,
       carName:        carName        ?? this.carName,
       carColor:       carColor       ?? this.carColor,
       carPlate:       carPlate       ?? this.carPlate,
+      acAvailable:    acAvailable    ?? this.acAvailable,
       startPoint:     startPoint,
       endPoint:       endPoint,
       stops:          stops,

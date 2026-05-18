@@ -1,6 +1,6 @@
-// 
 // ignore_for_file: deprecated_member_use
 
+import 'package:car_pooling/core/utils/snack_helper.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -128,8 +128,6 @@ class _BookingCardState extends State<_BookingCard> {
     }
   }
 
-  // Agar ride ka departure time guzar gaya aur passenger ride join nahi hua
-  // toh chahe status kuch bhi ho — "Expired" dikhao
   bool get _isExpiredByTime {
     if (_ride == null) return false;
     final isPastDeparture = DateTime.now().isAfter(_ride!.departureTime);
@@ -297,7 +295,29 @@ class _BookingCardState extends State<_BookingCard> {
               const SizedBox(height: 10),
               Align(
                 alignment: Alignment.centerRight,
-                child: _isCancelling
+                child: Builder(builder: (context) {
+                  // Cancel only allowed within 5 minutes of driver accepting.
+                  final acceptedAt = widget.booking.acceptedAt;
+                  final canCancel = acceptedAt == null ||
+                      DateTime.now().difference(acceptedAt).inSeconds <= 300;
+
+                  if (!canCancel) {
+                    return const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.timer_off_outlined,
+                            size: 13, color: AppTheme.textLight),
+                        SizedBox(width: 4),
+                        Text(
+                          'Cancel window closed',
+                          style: TextStyle(
+                              fontSize: 11, color: AppTheme.textLight),
+                        ),
+                      ],
+                    );
+                  }
+
+                  return _isCancelling
                     ? Container(
                         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
                         decoration: BoxDecoration(
@@ -331,25 +351,6 @@ class _BookingCardState extends State<_BookingCard> {
                     : GestureDetector(
                         onTap: () async {
                           if (_isCancelling) return;
-
-                          final minutesSinceBooked = DateTime.now().difference(widget.booking.createdAt).inMinutes;
-                          if (minutesSinceBooked > 5) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: const Row(children: [
-                                  Icon(Icons.timer_off, color: Colors.white, size: 18),
-                                  SizedBox(width: 10),
-                                  Expanded(child: Text('Cancel expired. Bookings can only be cancelled within 5 minutes of booking.')),
-                                ]),
-                                backgroundColor: AppTheme.warning,
-                                behavior: SnackBarBehavior.floating,
-                                margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                duration: const Duration(seconds: 4),
-                              ),
-                            );
-                            return;
-                          }
 
                           final confirm = await showDialog<bool>(
                             context: context,
@@ -429,17 +430,7 @@ class _BookingCardState extends State<_BookingCard> {
                               }
                             } catch (e) {
                               if (mounted) setState(() => _isCancelling = false);
-                              if (context.mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text('Error: $e'),
-                                    backgroundColor: AppTheme.error,
-                                    behavior: SnackBarBehavior.floating,
-                                    margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                  ),
-                                );
-                              }
+                              if (context.mounted) showErrorSnack(context, e);
                             }
                           }
                         },
@@ -456,7 +447,8 @@ class _BookingCardState extends State<_BookingCard> {
                                   color: AppTheme.error,
                                   fontWeight: FontWeight.w600)),
                         ),
-                      ),
+                      ); 
+                }),     
               ),
             ],
           ],

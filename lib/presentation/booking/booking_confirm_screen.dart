@@ -1,3 +1,4 @@
+import 'package:car_pooling/core/utils/snack_helper.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
@@ -25,13 +26,23 @@ class _BookingConfirmScreenState extends State<BookingConfirmScreen> {
   bool _isBooking = false;
   bool _bookingDone = false;
   String _pickupAddress = '';
+  double _pickupLat = 0;
+  double _pickupLng = 0;
   int _seatsNeeded = 1;
   double _offeredPrice = 0;
+  String? _passengerGender;
+  final _notesController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
     _load();
+  }
+
+  @override
+  void dispose() {
+    _notesController.dispose();
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -42,6 +53,8 @@ class _BookingConfirmScreenState extends State<BookingConfirmScreen> {
         _ride = ride;
         _currentUser = user;
         _pickupAddress = ride?.startPoint.address ?? '';
+        _pickupLat = ride?.startPoint.lat ?? 0;
+        _pickupLng = ride?.startPoint.lng ?? 0;
         _offeredPrice = ride?.pricePerSeat ?? 0;
         _isLoading = false;
       });
@@ -65,27 +78,69 @@ class _BookingConfirmScreenState extends State<BookingConfirmScreen> {
         passengerId: _currentUser!.uid,
         passengerName: _currentUser!.name,
         passengerPhoto: _currentUser!.photoUrl,
+        passengerGender: _passengerGender,
         pickupPoint: LocationPoint(
           address: _pickupAddress,
-          lat: _ride!.startPoint.lat,
-          lng: _ride!.startPoint.lng,
+          lat: _pickupLat,
+          lng: _pickupLng,
         ),
         seatsNeeded: _seatsNeeded,
         offeredPrice: _offeredPrice,
         status: 'pending',
+        passengerNotes: _notesController.text.trim().isEmpty ? null : _notesController.text.trim(),
         createdAt: DateTime.now(),
       );
       await _rideService.createBooking(booking);
       if (mounted) setState(() => _bookingDone = true);
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('$e'), backgroundColor: AppTheme.error),
-        );
-      }
-    } finally {
+  if (mounted) {
+    showErrorSnack(context, e);
+  }
+}
+    finally {
       if (mounted) setState(() => _isBooking = false);
     }
+  }
+
+  Widget _buildStopChip({
+    required String label,
+    required String address,
+    required double lat,
+    required double lng,
+  }) {
+    final isSelected = _pickupAddress == address && _pickupLat == lat;
+    return GestureDetector(
+      onTap: () => setState(() {
+        _pickupAddress = address;
+        _pickupLat = lat;
+        _pickupLng = lng;
+      }),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected ? AppTheme.primary : AppTheme.bgWhite,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+              color: isSelected ? AppTheme.primary : AppTheme.border),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.location_on,
+                size: 13,
+                color: isSelected ? Colors.white : AppTheme.textLight),
+            const SizedBox(width: 5),
+            Text(
+              label,
+              style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                  color: isSelected ? Colors.white : AppTheme.textDark),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -167,15 +222,12 @@ class _BookingConfirmScreenState extends State<BookingConfirmScreen> {
 
             const SizedBox(height: 20),
 
-            // Price negotiation (inDrive style)
-            const Text('Your Price Offer (Rs per seat)',
+            // Seats needed selector
+            const Text('Seats needed',
                 style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: AppTheme.textDark)),
-            const SizedBox(height: 4),
-            const Text('You can negotiate — driver will accept or counter',
-                style: TextStyle(fontSize: 12, color: AppTheme.textLight)),
             const SizedBox(height: 8),
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               decoration: BoxDecoration(
                 color: AppTheme.bgWhite,
                 borderRadius: BorderRadius.circular(12),
@@ -183,49 +235,119 @@ class _BookingConfirmScreenState extends State<BookingConfirmScreen> {
               ),
               child: Row(
                 children: [
-                  const Text("Rs", style: TextStyle(color: AppTheme.primary, fontSize: 14, fontWeight: FontWeight.w700)),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: TextFormField(
-                      initialValue: _offeredPrice > 0 ? _offeredPrice.toStringAsFixed(0) : '',
-                      keyboardType: TextInputType.number,
-                      style: const TextStyle(fontSize: 15, color: AppTheme.textDark),
-                      decoration: const InputDecoration(
-                        hintText: 'Enter your price',
-                        border: InputBorder.none,
-                      ),
-                      onChanged: (v) => setState(() => _offeredPrice = double.tryParse(v) ?? 0),
-                    ),
+                  const Icon(Icons.airline_seat_recline_normal, color: AppTheme.primary, size: 18),
+                  const SizedBox(width: 10),
+                  const Expanded(
+                    child: Text('Number of seats',
+                        style: TextStyle(fontSize: 13, color: AppTheme.textMedium)),
+                  ),
+                  _StepButton(
+                    icon: Icons.remove,
+                    onTap: _seatsNeeded > 1
+                        ? () => setState(() => _seatsNeeded--)
+                        : null,
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Text('$_seatsNeeded',
+                        style: const TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w700,
+                            color: AppTheme.primary)),
+                  ),
+                  _StepButton(
+                    icon: Icons.add,
+                    onTap: _seatsNeeded < ride.availableSeats
+                        ? () => setState(() => _seatsNeeded++)
+                        : null,
                   ),
                 ],
               ),
             ),
-            if (ride.pricePerSeat > 0 && _offeredPrice > 0 && _offeredPrice != ride.pricePerSeat)
-              Padding(
-                padding: const EdgeInsets.only(top: 6),
-                child: Text(
-                  _offeredPrice < ride.pricePerSeat
-                      ? '⚠️ Below driver\'s price — driver may reject'
-                      : '✅ Above driver\'s price',
-                  style: TextStyle(
-                      fontSize: 12,
-                      color: _offeredPrice < ride.pricePerSeat
-                          ? AppTheme.error : AppTheme.success),
-                ),
-              ),
 
             const SizedBox(height: 20),
 
             // Pickup address
             const Text('Your pickup point',
                 style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: AppTheme.textDark)),
+            const SizedBox(height: 4),
+            const Text('Select a stop or type your own address',
+                style: TextStyle(fontSize: 12, color: AppTheme.textLight)),
             const SizedBox(height: 8),
+
+            // ── Stop selector chips (startPoint + any stops) ──────────
+            if (ride.stops.isNotEmpty) ...[
+              Wrap(
+                spacing: 8,
+                runSpacing: 6,
+                children: [
+                  _buildStopChip(
+                    label: 'Start point',
+                    address: ride.startPoint.address,
+                    lat: ride.startPoint.lat,
+                    lng: ride.startPoint.lng,
+                  ),
+                  ...ride.stops.asMap().entries.map((e) => _buildStopChip(
+                        label: 'Stop ${e.key + 1}',
+                        address: e.value.address,
+                        lat: e.value.lat,
+                        lng: e.value.lng,
+                      )),
+                ],
+              ),
+              const SizedBox(height: 10),
+            ],
+
             TextFormField(
+              key: ValueKey(_pickupAddress),
               initialValue: _pickupAddress,
-              onChanged: (v) => _pickupAddress = v,
+              onChanged: (v) => setState(() {
+                _pickupAddress = v;
+                // When user types manually, reset coordinates to 0
+                // so driver knows it's a custom address without a pin
+                _pickupLat = 0;
+                _pickupLng = 0;
+              }),
               decoration: const InputDecoration(
                 hintText: 'Enter your pickup location',
                 prefixIcon: Icon(Icons.my_location, color: AppTheme.primary),
+              ),
+            ),
+
+            const SizedBox(height: 20),
+
+            // Gender selector
+            const Text('Your Gender',
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: AppTheme.textDark)),
+            const SizedBox(height: 4),
+            const Text('Helps the driver know who is joining',
+                style: TextStyle(fontSize: 12, color: AppTheme.textLight)),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                _GenderChip(label: 'Male',   icon: Icons.male,   selected: _passengerGender == 'male',   onTap: () => setState(() => _passengerGender = 'male')),
+                const SizedBox(width: 10),
+                _GenderChip(label: 'Female', icon: Icons.female, selected: _passengerGender == 'female', onTap: () => setState(() => _passengerGender = 'female')),
+                const SizedBox(width: 10),
+                _GenderChip(label: 'Other',  icon: Icons.person_outline, selected: _passengerGender == 'other', onTap: () => setState(() => _passengerGender = 'other')),
+              ],
+            ),
+
+            const SizedBox(height: 20),
+
+            // Notes field
+            const Text('Notes (optional)',
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: AppTheme.textDark)),
+            const SizedBox(height: 4),
+            const Text('Any special request or info for the driver',
+                style: TextStyle(fontSize: 12, color: AppTheme.textLight)),
+            const SizedBox(height: 8),
+            TextFormField(
+              controller: _notesController,
+              maxLines: 3,
+              decoration: const InputDecoration(
+                hintText: 'e.g. I have luggage, please call on arrival...',
+                alignLabelWithHint: true,
               ),
             ),
 
@@ -352,6 +474,52 @@ class _BookingSuccessView extends StatelessWidget {
                 onPressed: () => context.push('/chat/${ride.id}'),
                 child: const Text('Contact', style: TextStyle(color: AppTheme.primary)),
               ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+class _GenderChip extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _GenderChip({
+    required this.label,
+    required this.icon,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          decoration: BoxDecoration(
+            color: selected ? AppTheme.primary : AppTheme.bgWhite,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: selected ? AppTheme.primary : AppTheme.border,
+              width: selected ? 1.5 : 1,
+            ),
+          ),
+          child: Column(
+            children: [
+              Icon(icon, size: 20, color: selected ? Colors.white : AppTheme.textMedium),
+              const SizedBox(height: 4),
+              Text(label,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: selected ? Colors.white : AppTheme.textMedium,
+                  )),
             ],
           ),
         ),

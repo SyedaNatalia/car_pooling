@@ -1,4 +1,4 @@
-package com.example.carpooling_app
+package com.example.fairfare_carpool
 
 import io.flutter.embedding.android.FlutterActivity
 

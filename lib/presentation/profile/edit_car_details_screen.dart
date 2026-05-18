@@ -23,6 +23,7 @@ class _EditCarDetailsScreenState extends State<EditCarDetailsScreen> {
 
   bool _isLoading = true;
   bool _isSaving  = false;
+  bool _hasAC     = false;
 
   @override
   void initState() {
@@ -39,6 +40,7 @@ class _EditCarDetailsScreenState extends State<EditCarDetailsScreen> {
       _colorController.text = car.color;
       _plateController.text = car.plateNumber;
       _yearController.text  = car.year.toString();
+      _hasAC = car.hasAC;
     }
     if (mounted) setState(() => _isLoading = false);
   }
@@ -67,6 +69,7 @@ class _EditCarDetailsScreenState extends State<EditCarDetailsScreen> {
         color:       _colorController.text.trim(),
         plateNumber: _plateController.text.trim().toUpperCase(),
         year:        int.tryParse(_yearController.text.trim()) ?? 2020,
+        hasAC:       _hasAC,
       );
 
       await _authService.updateCarDetails(uid: user.uid, carDetails: car);
@@ -209,6 +212,34 @@ class _EditCarDetailsScreenState extends State<EditCarDetailsScreen> {
                         }
                         return null;
                       },
+                    ),
+                    const SizedBox(height: 16),
+
+                    const _SectionLabel('Air Conditioning'),
+                    Container(
+                      decoration: BoxDecoration(
+                        color: AppTheme.bgWhite,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: AppTheme.border),
+                      ),
+                      child: SwitchListTile(
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                        title: const Text(
+                          'AC Available',
+                          style: TextStyle(fontSize: 15, color: AppTheme.textDark),
+                        ),
+                        subtitle: Text(
+                          _hasAC ? 'AC is available in your car' : 'No AC in your car',
+                          style: const TextStyle(fontSize: 12, color: AppTheme.textLight),
+                        ),
+                        secondary: Icon(
+                          Icons.ac_unit,
+                          color: _hasAC ? AppTheme.primary : AppTheme.textLight,
+                        ),
+                        value: _hasAC,
+                        activeColor: AppTheme.primary,
+                        onChanged: (val) => setState(() => _hasAC = val),
+                      ),
                     ),
                     const SizedBox(height: 32),
 

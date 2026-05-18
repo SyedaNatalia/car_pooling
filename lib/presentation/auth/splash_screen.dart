@@ -109,8 +109,7 @@ class _SplashScreenState extends State<SplashScreen>
                                 blurRadius: 32, offset: const Offset(0, 14)),
                           ],
                         ),
-                        child: const Icon(Icons.directions_car_rounded,
-                            color: AppTheme.primary, size: 58),
+                        child: Image.asset('assets/images/logo.jpeg', width: 90, height: 120),
                       ),
                     ),
                   ),
@@ -123,7 +122,7 @@ class _SplashScreenState extends State<SplashScreen>
                   child: SlideTransition(
                     position: _textSlide,
                     child: Column(children: [
-                      const Text('RideTogether',
+                      const Text('FairFare Carpool',
                           style: TextStyle(color: Colors.white, fontSize: 30,
                               fontWeight: FontWeight.w800, letterSpacing: -0.5)),
                       const SizedBox(height: 8),

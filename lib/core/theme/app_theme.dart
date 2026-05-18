@@ -8,7 +8,7 @@ class AppTheme {
   // ── Supporting colors (unchanged) ─────────────────────────
   static const Color secondary    = Color(0xFF0EA5E9);
   static const Color success      = Color(0xFF22C55E);
-  static const Color warning      = Color(0xFFF59E0B);
+  static const Color warning      = Color(0xFFEC8819);
   static const Color error        = Color(0xFFEF4444);
 
   // ── Text colors ────────────────────────────────────────────

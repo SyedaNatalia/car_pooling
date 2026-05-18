@@ -14,7 +14,20 @@ class RideResultsScreen extends StatefulWidget {
   final DateTime date;
   final String? fromCity;
   final String? toCity;
-  const RideResultsScreen({super.key, required this.date, this.fromCity, this.toCity});
+  final double? pickupLat;
+  final double? pickupLng;
+  final double? dropoffLat;
+  final double? dropoffLng;
+  const RideResultsScreen({
+    super.key,
+    required this.date,
+    this.fromCity,
+    this.toCity,
+    this.pickupLat,
+    this.pickupLng,
+    this.dropoffLat,
+    this.dropoffLng,
+  });
 
   @override
   State<RideResultsScreen> createState() => _RideResultsScreenState();
@@ -23,6 +36,7 @@ class RideResultsScreen extends StatefulWidget {
 class _RideResultsScreenState extends State<RideResultsScreen> with WidgetsBindingObserver {
   final _rideService = RideService();
   List<RideModel> _rides = [];
+  List<RideModel> _fullRides = [];
   bool _isLoading = true;
   bool _isRefreshing = false;
   String? _errorMessage;
@@ -72,6 +86,10 @@ class _RideResultsScreenState extends State<RideResultsScreen> with WidgetsBindi
         excludeDriverId: uid,
         fromCity: widget.fromCity,
         toCity: widget.toCity,
+        pickupLat: widget.pickupLat,
+        pickupLng: widget.pickupLng,
+        dropoffLat: widget.dropoffLat,
+        dropoffLng: widget.dropoffLng,
       );
       final active = await _rideService.searchRidesByStatus(
         status: 'active',
@@ -79,15 +97,38 @@ class _RideResultsScreenState extends State<RideResultsScreen> with WidgetsBindi
         excludeDriverId: uid,
         fromCity: widget.fromCity,
         toCity: widget.toCity,
+        pickupLat: widget.pickupLat,
+        pickupLng: widget.pickupLng,
+        dropoffLat: widget.dropoffLat,
+        dropoffLng: widget.dropoffLng,
+      );
+      // Also fetch full rides so passenger sees them grayed out
+      final allUpcoming = await _rideService.searchRidesByStatus(
+        status: 'upcoming',
+        date: widget.date,
+        excludeDriverId: uid,
+        fromCity: widget.fromCity,
+        toCity: widget.toCity,
+        pickupLat: widget.pickupLat,
+        pickupLng: widget.pickupLng,
+        dropoffLat: widget.dropoffLat,
+        dropoffLng: widget.dropoffLng,
+        includeFullRides: true,
       );
       final seen = <String>{};
       final merged = [...upcoming, ...active]
           .where((r) => seen.add(r.id))
           .toList()
         ..sort((a, b) => a.departureTime.compareTo(b.departureTime));
+      // Full rides = in allUpcoming but not in merged (seats=0)
+      final mergedIds = merged.map((r) => r.id).toSet();
+      final fullRides = allUpcoming
+          .where((r) => !mergedIds.contains(r.id) && r.availableSeats <= 0)
+          .toList();
       if (mounted) {
         setState(() {
           _rides = merged;
+          _fullRides = fullRides;
           _lastUpdated = DateTime.now();
           _isLoading = false;
           _isRefreshing = false;
@@ -180,7 +221,7 @@ class _RideResultsScreenState extends State<RideResultsScreen> with WidgetsBindi
                         ),
                       ),
                       Expanded(
-                        child: _rides.isEmpty
+                        child: _rides.isEmpty && _fullRides.isEmpty
                             ? _EmptyResults(
                                 date: widget.date,
                                 hasRouteFilter: hasRouteFilter,
@@ -188,13 +229,53 @@ class _RideResultsScreenState extends State<RideResultsScreen> with WidgetsBindi
                                 toCity: toCity,
                                 onRefresh: _refreshRides,
                               )
-                            : ListView.builder(
+                            : ListView(
                                 padding: const EdgeInsets.all(16),
-                                itemCount: _rides.length,
-                                itemBuilder: (ctx, i) => Padding(
-                                  padding: const EdgeInsets.only(bottom: 12),
-                                  child: _RideResultCard(ride: _rides[i]),
-                                ),
+                                children: [
+                                  if (_rides.isNotEmpty) ...[
+                                    ...List.generate(_rides.length, (i) => Padding(
+                                      padding: const EdgeInsets.only(bottom: 12),
+                                      child: _RideResultCard(ride: _rides[i]),
+                                    )),
+                                  ] else
+                                    const AnimatedEmptyState(
+                                      icon: Icons.search_off_rounded,
+                                      title: 'No available rides',
+                                      subtitle: 'All rides on this route are full\nor no rides match your search.',
+                                    ),
+                                  if (_fullRides.isNotEmpty) ...[
+                                    const SizedBox(height: 8),
+                                    Padding(
+                                      padding: const EdgeInsets.only(bottom: 10),
+                                      child: Row(children: [
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                          decoration: BoxDecoration(
+                                            color: AppTheme.error.withOpacity(0.08),
+                                            borderRadius: BorderRadius.circular(20),
+                                            border: Border.all(color: AppTheme.error.withOpacity(0.2)),
+                                          ),
+                                          child: Row(mainAxisSize: MainAxisSize.min, children: [
+                                            Icon(Icons.event_seat, size: 12, color: AppTheme.error.withOpacity(0.8)),
+                                            const SizedBox(width: 5),
+                                            Text(
+                                              'Full rides (${_fullRides.length})',
+                                              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppTheme.error.withOpacity(0.8)),
+                                            ),
+                                          ]),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        const Expanded(
+                                          child: Text('No seats available', style: TextStyle(fontSize: 11, color: AppTheme.textLight)),
+                                        ),
+                                      ]),
+                                    ),
+                                    ...List.generate(_fullRides.length, (i) => Padding(
+                                      padding: const EdgeInsets.only(bottom: 12),
+                                      child: _RideResultCard(ride: _fullRides[i], isFull: true),
+                                    )),
+                                  ],
+                                ],
                               ),
                       ),
                     ],
@@ -206,7 +287,8 @@ class _RideResultsScreenState extends State<RideResultsScreen> with WidgetsBindi
 
 class _RideResultCard extends StatelessWidget {
   final RideModel ride;
-  const _RideResultCard({required this.ride});
+  final bool isFull;
+  const _RideResultCard({required this.ride, this.isFull = false});
 
   @override
   Widget build(BuildContext context) {
@@ -216,16 +298,35 @@ class _RideResultCard extends StatelessWidget {
 
     return GestureDetector(
       onTap: () => context.push('/ride/${ride.id}'),
-      child: Container(
+      child: Opacity(
+        opacity: isFull ? 0.55 : 1.0,
+        child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: AppTheme.bgWhite,
+          color: isFull ? AppTheme.bgLight : AppTheme.bgWhite,
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: AppTheme.border),
+          border: Border.all(color: isFull ? AppTheme.border : AppTheme.border),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            if (isFull)
+              Container(
+                margin: const EdgeInsets.only(bottom: 10),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  color: AppTheme.error.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.event_busy, size: 13, color: AppTheme.error),
+                    SizedBox(width: 6),
+                    Text('Seats Full — No bookings accepted', style: TextStyle(fontSize: 11, color: AppTheme.error, fontWeight: FontWeight.w600)),
+                  ],
+                ),
+              ),
             Row(
               children: [
                 CircleAvatar(
@@ -259,12 +360,42 @@ class _RideResultCard extends StatelessWidget {
                       ),
                       Row(
                         children: [
-                          const Icon(Icons.star, size: 13, color: Color(0xFFF59E0B)),
-                          const SizedBox(width: 3),
-                          Text(
-                            ride.driverRating.toStringAsFixed(1),
-                            style: const TextStyle(fontSize: 12, color: AppTheme.textMedium),
-                          ),
+                          if (ride.driverGender != null && ride.driverGender!.isNotEmpty) ...[
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: ride.driverGender!.toLowerCase() == 'female'
+                                    ? const Color(0xFFFCE4EC)
+                                    : const Color(0xFFE3F2FD),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    ride.driverGender!.toLowerCase() == 'female'
+                                        ? Icons.female
+                                        : Icons.male,
+                                    size: 11,
+                                    color: ride.driverGender!.toLowerCase() == 'female'
+                                        ? const Color(0xFFAD1457)
+                                        : const Color(0xFF1565C0),
+                                  ),
+                                  const SizedBox(width: 2),
+                                  Text(
+                                    ride.driverGender!,
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w600,
+                                      color: ride.driverGender!.toLowerCase() == 'female'
+                                          ? const Color(0xFFAD1457)
+                                          : const Color(0xFF1565C0),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
                         ],
                       ),
                     ],
@@ -331,6 +462,44 @@ class _RideResultCard extends StatelessWidget {
                         ),
                       ),
                     ),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: ride.acAvailable
+                            ? const Color(0xFFE0F7FA)
+                            : AppTheme.bgLight,
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(
+                          color: ride.acAvailable
+                              ? const Color(0xFF00ACC1)
+                              : AppTheme.border,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.ac_unit,
+                            size: 11,
+                            color: ride.acAvailable
+                                ? const Color(0xFF00ACC1)
+                                : AppTheme.textLight,
+                          ),
+                          const SizedBox(width: 3),
+                          Text(
+                            ride.acAvailable ? 'AC' : 'No AC',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                              color: ride.acAvailable
+                                  ? const Color(0xFF00ACC1)
+                                  : AppTheme.textLight,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -390,21 +559,24 @@ class _RideResultCard extends StatelessWidget {
               width: double.infinity,
               height: 42,
               child: ElevatedButton(
-                onPressed: ride.availableSeats > 0
+                onPressed: (ride.availableSeats > 0 && !isFull)
                     ? () => context.push('/ride/${ride.id}/book')
                     : null,
                 style: ElevatedButton.styleFrom(
                   minimumSize: Size.zero,
                   padding: EdgeInsets.zero,
+                  backgroundColor: isFull ? AppTheme.error.withOpacity(0.15) : null,
+                  foregroundColor: isFull ? AppTheme.error : null,
                 ),
                 child: Text(
-                  ride.availableSeats > 0 ? 'Book this ride' : 'Full',
+                  isFull ? 'Seats Full' : 'Book this ride',
                   style: const TextStyle(fontSize: 14),
                 ),
               ),
             ),
           ],
         ),
+      ),
       ),
     );
   }

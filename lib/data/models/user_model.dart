@@ -12,6 +12,7 @@ class UserModel {
   final int totalRides;
   final DateTime createdAt;
   final bool isActive;
+  final String? gender; 
 
   UserModel({
     required this.uid,
@@ -27,6 +28,7 @@ class UserModel {
     this.totalRides = 0,
     required this.createdAt,
     this.isActive = true,
+    this.gender,
   });
 
   factory UserModel.fromMap(Map<String, dynamic> data, String uid) {
@@ -48,6 +50,7 @@ class UserModel {
           ? DateTime.parse(data['createdAt'])
           : DateTime.now(),
       isActive: data['isActive'] ?? true,
+      gender: data['gender'],
     );
   }
 
@@ -64,6 +67,7 @@ class UserModel {
     'totalRides': totalRides,
     'createdAt': createdAt.toIso8601String(),
     'isActive': isActive,
+    'gender': gender,
   };
 }
 
@@ -73,6 +77,7 @@ class CarDetails {
   final String color;
   final String plateNumber;
   final int year;
+  final bool hasAC;
 
   CarDetails({
     required this.make,
@@ -80,6 +85,7 @@ class CarDetails {
     required this.color,
     required this.plateNumber,
     required this.year,
+    this.hasAC = false,
   });
 
   factory CarDetails.fromMap(Map<String, dynamic> map) => CarDetails(
@@ -88,6 +94,7 @@ class CarDetails {
     color: map['color'] ?? '',
     plateNumber: map['plateNumber'] ?? '',
     year: map['year'] ?? 2020,
+    hasAC: map['hasAC'] ?? false,
   );
 
   Map<String, dynamic> toMap() => {
@@ -96,5 +103,6 @@ class CarDetails {
     'color': color,
     'plateNumber': plateNumber,
     'year': year,
+    'hasAC': hasAC,
   };
 }

@@ -30,6 +30,15 @@ import '../../presentation/chat/chat_screen.dart';
 import '../../presentation/admin/admin_screen.dart';
 import '../../presentation/profile/rating_screen.dart';
 
+// ✅ Global notifier — call .refresh() after email verification to force
+// the router to re-evaluate its redirect (since authStateChanges does not
+// fire on emailVerified changes, only on sign-in/sign-out).
+class RouterRefreshNotifier extends ChangeNotifier {
+  static final instance = RouterRefreshNotifier._();
+  RouterRefreshNotifier._();
+  void refresh() => notifyListeners();
+}
+
 final appRouterProvider = Provider<GoRouter>((ref) {
   final authNotifier = ValueNotifier<bool>(false);
 
@@ -37,9 +46,12 @@ final appRouterProvider = Provider<GoRouter>((ref) {
     authNotifier.value = !authNotifier.value;
   });
 
+  // Combine both: auth stream changes AND manual refresh after verification
+  final combined = Listenable.merge([authNotifier, RouterRefreshNotifier.instance]);
+
   return GoRouter(
     initialLocation: '/splash',
-    refreshListenable: authNotifier,
+    refreshListenable: combined,
     redirect: (context, state) async {
       final authState = ref.read(firebaseAuthStateProvider);
 
@@ -49,7 +61,14 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         return null;
       }
 
-      final isLoggedIn = authState.valueOrNull != null;
+      final firebaseUser = authState.valueOrNull;
+
+      if (firebaseUser != null) {
+        try { await firebaseUser.reload(); } catch (_) {}
+      }
+      final freshUser = FirebaseAuth.instance.currentUser;
+      final isLoggedIn = freshUser != null && freshUser.emailVerified;
+
       final loc = state.matchedLocation;
       final isAuthRoute = loc.startsWith('/auth');
       final isSplash = loc == '/splash';
@@ -111,6 +130,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             date: extra['date'] as DateTime,
             fromCity: extra['fromCity'] as String?,
             toCity: extra['toCity'] as String?,
+            pickupLat: (extra['pickupLocation'] as dynamic)?.latitude as double?,
+            pickupLng: (extra['pickupLocation'] as dynamic)?.longitude as double?,
+            dropoffLat: (extra['dropoffLocation'] as dynamic)?.latitude as double?,
+            dropoffLng: (extra['dropoffLocation'] as dynamic)?.longitude as double?,
           );
         },
       ),
@@ -162,17 +185,21 @@ GoRoute(path: '/my-rides',       builder: (_, __) => const MyRidesScreen()),
 GoRoute(path: '/notifications',  builder: (_, __) => const NotificationsScreen()),
 GoRoute(path: '/help',           builder: (_, __) => const HelpScreen()),
 GoRoute(path: '/about',          builder: (_, __) => const AboutScreen()),
+// GoRoute(
+//   path: '/rate/:rideId/:ratedUserId',
+//   builder: (context, state) {
+//     final extra = state.extra as Map<String, dynamic>?;
+//     return RatingScreen(
+//       rideId: state.pathParameters['rideId']!,
+//       ratedUserId: state.pathParameters['ratedUserId']!,
+//       ratedUserName: extra?['name'] as String? ?? 'User',
+//       ratedUserPhoto: extra?['photo'] as String?,
+//     );
+//   },
+// ),
 GoRoute(
   path: '/rate/:rideId/:ratedUserId',
-  builder: (context, state) {
-    final extra = state.extra as Map<String, dynamic>?;
-    return RatingScreen(
-      rideId: state.pathParameters['rideId']!,
-      ratedUserId: state.pathParameters['ratedUserId']!,
-      ratedUserName: extra?['name'] as String? ?? 'User',
-      ratedUserPhoto: extra?['photo'] as String?,
-    );
-  },
+  builder: (context, state) => const SizedBox.shrink(),
 ),
     ],
   );

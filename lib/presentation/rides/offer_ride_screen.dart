@@ -70,6 +70,8 @@ class _OfferRideScreenState extends State<OfferRideScreen> {
   String _carName  = ''; 
   String _carColor = '';
   String _carPlate = '';
+  bool _acAvailable = false;
+  String? _driverGender;
 
 
   @override
@@ -114,6 +116,8 @@ class _OfferRideScreenState extends State<OfferRideScreen> {
         _carName  = car != null ? '${car.make} ${car.model}'.trim() : '';
         _carColor = car?.color ?? '';
         _carPlate = car?.plateNumber ?? '';
+        _acAvailable = car?.hasAC ?? false;
+        _driverGender = user.gender;
       });
     }
   }
@@ -439,6 +443,8 @@ class _OfferRideScreenState extends State<OfferRideScreen> {
         carName:        _carName,
         carColor:       _carColor,
         carPlate:       _carPlate,
+        acAvailable:    _acAvailable,
+        driverGender:   _driverGender,
         status:         'upcoming',
         notes: _notesController.text.trim().isEmpty ? null : _notesController.text.trim(),
         createdAt: DateTime.now(),
@@ -792,6 +798,23 @@ class _OfferRideScreenState extends State<OfferRideScreen> {
             hintText: 'e.g. I can pick up from nearby streets, no pets please...',
             alignLabelWithHint: true,
           ),
+        ),
+
+        const SizedBox(height: 24),
+        const Text('Your Gender',
+            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: AppTheme.textDark)),
+        const SizedBox(height: 4),
+        const Text('Helps passengers find comfortable rides',
+            style: TextStyle(fontSize: 11, color: AppTheme.textLight)),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            _GenderChip(label: 'Male',   icon: Icons.male,   value: 'male',   selected: _driverGender == 'male',   onTap: () => setState(() => _driverGender = 'male')),
+            const SizedBox(width: 10),
+            _GenderChip(label: 'Female', icon: Icons.female, value: 'female', selected: _driverGender == 'female', onTap: () => setState(() => _driverGender = 'female')),
+            const SizedBox(width: 10),
+            _GenderChip(label: 'Other',  icon: Icons.person_outline, value: 'other', selected: _driverGender == 'other', onTap: () => setState(() => _driverGender = 'other')),
+          ],
         ),
       ],
     );
@@ -1209,6 +1232,54 @@ class _PassengerBookingNoticeSheet extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+class _GenderChip extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final String value;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _GenderChip({
+    required this.label,
+    required this.icon,
+    required this.value,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          decoration: BoxDecoration(
+            color: selected ? AppTheme.primary : AppTheme.bgWhite,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: selected ? AppTheme.primary : AppTheme.border,
+              width: selected ? 1.5 : 1,
+            ),
+          ),
+          child: Column(
+            children: [
+              Icon(icon, size: 20, color: selected ? Colors.white : AppTheme.textMedium),
+              const SizedBox(height: 4),
+              Text(label,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: selected ? Colors.white : AppTheme.textMedium,
+                  )),
+            ],
+          ),
+        ),
       ),
     );
   }

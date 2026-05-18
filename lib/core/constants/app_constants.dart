@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 
 class AppConstants {
-  static const String appName = 'RideTogether';
-  static const String companyDomain = '@gmail.com';
+  static const String appName = 'FairFare Carpool';
+  static const String companyDomain = '@olivetech.com.pk';
 
   // ── Firestore Collections ─────────────────────────────────────────
   static const String usersCollection = 'users';
@@ -32,29 +32,35 @@ class AppConstants {
   static const String roleApprentice = 'apprentice';
   static const String roleIntern = 'intern';
   static const String roleAdmin = 'admin';
+  static const String roleHeadSmartSolutions = 'head_smart_solutions';
+  static const String roleHeadRenewableEnergy = 'head_renewable_energy';
+  static const String roleHeadBusinessDev = 'head_business_development';
 
   // ── Role Labels ────────────────────────────────────────────────────
   static const Map<String, String> roleLabels = {
-    roleEmployee: 'Employee',
-    roleApprentice: 'Apprentice',
-    roleIntern: 'Intern',
-    roleAdmin: 'Admin',
+    roleEmployee:            'Employee',
+    roleApprentice:          'Apprentice',
+    roleIntern:              'Intern',
+    roleAdmin:               'Admin',
+    roleHeadSmartSolutions:  'Head of Smart Solutions',
+    roleHeadRenewableEnergy: 'Head of Renewable Energy',
+    roleHeadBusinessDev:     'Head of Business Development',
   };
 
   // ── Role List for Dropdown ─────────────────────────────────────────
   static const List<Map<String, String>> roles = [
-    {'value': roleEmployee, 'label': 'Employee'},
-    {'value': roleApprentice, 'label': 'Apprentice'},
-    {'value': roleIntern, 'label': 'Intern'},
-    {'value': roleAdmin, 'label': 'Admin'},
+    {'value': roleEmployee,            'label': 'Employee'},
+    {'value': roleApprentice,          'label': 'Apprentice'},
+    {'value': roleIntern,              'label': 'Intern'},
+    {'value': roleHeadSmartSolutions,  'label': 'Head of Smart Solutions'},
+    {'value': roleHeadRenewableEnergy, 'label': 'Head of Renewable Energy'},
+    {'value': roleHeadBusinessDev,     'label': 'Head of Business Development'},
+    {'value': roleAdmin,               'label': 'Admin'},
   ];
 
   // ── Companies ─────────────────────────────────────────────────────
   static const List<String> companies = [
-    'FFC',
-    'OLIVE',
-    'Sone',
-    'Foji Foods',
+    'OliveTech',
   ];
 
   // ── Departments ───────────────────────────────────────────────────
@@ -70,6 +76,8 @@ class AppConstants {
     'Legal',
     'Admin',
     'IT',
+    'Renewable Energy',
+    'Business Development',
     'Other',
   ];
 

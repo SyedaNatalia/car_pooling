@@ -1,5 +1,6 @@
 // ignore_for_file: deprecated_member_use
 
+import 'package:car_pooling/core/utils/snack_helper.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -92,7 +93,7 @@ class _ManageRequestsScreenState extends State<ManageRequestsScreen> {
       _showSnack('Seats updated ✓', AppTheme.success);
     } catch (e) {
       if (mounted) setState(() => _savingSeats = false);
-      _showSnack('Error saving seats: $e', AppTheme.error);
+      showErrorSnack(context, e);  
     }
   }
 
@@ -114,7 +115,8 @@ class _ManageRequestsScreenState extends State<ManageRequestsScreen> {
       _showSnack('Notes updated ✓', AppTheme.success);
     } catch (e) {
       if (mounted) setState(() => _savingNotes = false);
-      _showSnack('Error saving notes: $e', AppTheme.error);
+      showErrorSnack(context, e);
+
     }
   }
 
@@ -136,7 +138,7 @@ class _ManageRequestsScreenState extends State<ManageRequestsScreen> {
       _showSnack('Price updated ✓', AppTheme.success);
     } catch (e) {
       if (mounted) setState(() => _savingPrice = false);
-      _showSnack('Error saving price: $e', AppTheme.error);
+      showErrorSnack(context, e);
     }
   }
 
@@ -146,7 +148,7 @@ class _ManageRequestsScreenState extends State<ManageRequestsScreen> {
       await _rideService.updateBookingStatus(bookingId, 'accepted');
       _showSnack('Request accepted ✓', AppTheme.success);
     } catch (e) {
-      _showSnack('Error: $e', AppTheme.error);
+      showErrorSnack(context, e);
     }
   }
 
@@ -181,7 +183,7 @@ class _ManageRequestsScreenState extends State<ManageRequestsScreen> {
       await _rideService.updateBookingStatus(bookingId, 'rejected');
       _showSnack('Request rejected', AppTheme.error);
     } catch (e) {
-      _showSnack('Error: $e', AppTheme.error);
+      showErrorSnack(context, e);
     }
   }
 
@@ -216,8 +218,11 @@ class _ManageRequestsScreenState extends State<ManageRequestsScreen> {
         ],
       ),
 
-      body: Column(
-        children: [
+      resizeToAvoidBottomInset: true,
+body: SingleChildScrollView(
+  keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+  child: Column(
+    children: [
           if (_loadingRide)
             const Padding(
               padding: EdgeInsets.all(16),
@@ -423,9 +428,8 @@ class _ManageRequestsScreenState extends State<ManageRequestsScreen> {
 
           const SizedBox(height: 8),
           // ── Booking Requests list ────────────────────────────────
-          Expanded(
-            child: StreamBuilder<List<BookingModel>>(
-              stream: _rideService.getRideBookings(widget.rideId),
+          StreamBuilder<List<BookingModel>>(
+    stream: _rideService.getRideBookings(widget.rideId),
               builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(
@@ -453,10 +457,36 @@ class _ManageRequestsScreenState extends State<ManageRequestsScreen> {
           final rejected =
               bookings.where((b) => b.status == 'rejected').toList();
 
+          final seatsFull = (_ride?.availableSeats ?? 1) <= 0;
+
           return ListView(
-            padding: const EdgeInsets.all(16),
-            children: [
+  padding: const EdgeInsets.all(16),
+  shrinkWrap: true,
+  physics: const NeverScrollableScrollPhysics(),
+  children: [
               if (pending.isNotEmpty) ...[
+                if (seatsFull)
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: AppTheme.error.withOpacity(0.08),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppTheme.error.withOpacity(0.3)),
+                    ),
+                    child: const Row(
+                      children: [
+                        Icon(Icons.event_seat, color: AppTheme.error, size: 18),
+                        SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            'All seats are full. You cannot accept more requests unless you free up a seat or increase total seats.',
+                            style: TextStyle(fontSize: 12, color: AppTheme.error, height: 1.4),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 _SectionHeader(
                     title: 'Pending Requests',
                     count: pending.length,
@@ -466,6 +496,7 @@ class _ManageRequestsScreenState extends State<ManageRequestsScreen> {
                   padding: const EdgeInsets.only(bottom: 10),
                   child: _BookingCard(
                     booking: b,
+                    seatsFull: seatsFull,
                     onAccept: () => _accept(b.id),
                     onReject: () => _reject(b.id),
                   ),
@@ -503,12 +534,11 @@ class _ManageRequestsScreenState extends State<ManageRequestsScreen> {
               ],
             ],
           );
-        },
-            ),
-          ),
-        ],
+         },
+        ),
+       ],
       ),
-    );
+    ));
   }
 }
 
@@ -582,10 +612,12 @@ class _SectionHeader extends StatelessWidget {
 
 class _BookingCard extends StatefulWidget {
   final BookingModel booking;
+  final bool seatsFull;
   final VoidCallback onAccept;
   final VoidCallback onReject;
   const _BookingCard({
     required this.booking,
+    this.seatsFull = false,
     required this.onAccept,
     required this.onReject,
   });
@@ -656,6 +688,43 @@ class _BookingCardState extends State<_BookingCard> {
                     Text('Rs ${b.offeredPrice.toStringAsFixed(0)}/seat',
                         style: const TextStyle(fontSize: 12, color: AppTheme.textMedium)),
                   ],
+                  if (b.passengerGender != null && b.passengerGender!.isNotEmpty) ...[
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: b.passengerGender!.toLowerCase() == 'female'
+                            ? const Color(0xFFFCE4EC)
+                            : const Color(0xFFE3F2FD),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            b.passengerGender!.toLowerCase() == 'female'
+                                ? Icons.female
+                                : Icons.male,
+                            size: 11,
+                            color: b.passengerGender!.toLowerCase() == 'female'
+                                ? const Color(0xFFAD1457)
+                                : const Color(0xFF1565C0),
+                          ),
+                          const SizedBox(width: 2),
+                          Text(
+                            b.passengerGender!,
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                              color: b.passengerGender!.toLowerCase() == 'female'
+                                  ? const Color(0xFFAD1457)
+                                  : const Color(0xFF1565C0),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ]),
                 const SizedBox(height: 2),
                 Row(children: [
@@ -671,6 +740,28 @@ class _BookingCardState extends State<_BookingCard> {
                         overflow: TextOverflow.ellipsis),
                   ),
                 ]),
+                if (b.passengerNotes != null && b.passengerNotes!.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(Icons.note_outlined,
+                          size: 12, color: AppTheme.textLight),
+                      const SizedBox(width: 3),
+                      Expanded(
+                        child: Text(
+                          b.passengerNotes!,
+                          style: const TextStyle(
+                              fontSize: 12,
+                              color: AppTheme.textMedium,
+                              fontStyle: FontStyle.italic),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ],
             ),
           ),
@@ -695,6 +786,20 @@ class _BookingCardState extends State<_BookingCard> {
           const SizedBox(height: 12),
           const Divider(height: 1, color: AppTheme.border),
           const SizedBox(height: 12),
+          if (widget.seatsFull)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Row(
+                children: [
+                  Icon(Icons.block, size: 13, color: AppTheme.error.withOpacity(0.7)),
+                  const SizedBox(width: 6),
+                  Text(
+                    'Seats full — cannot accept',
+                    style: TextStyle(fontSize: 11, color: AppTheme.error.withOpacity(0.8), fontWeight: FontWeight.w500),
+                  ),
+                ],
+              ),
+            ),
           Row(children: [
             Expanded(
               child: OutlinedButton(
@@ -725,7 +830,7 @@ class _BookingCardState extends State<_BookingCard> {
             const SizedBox(width: 10),
             Expanded(
               child: ElevatedButton(
-                onPressed: (_isAccepting || _isRejecting)
+                onPressed: (_isAccepting || _isRejecting || widget.seatsFull)
                     ? null
                     : () async {
                         setState(() => _isAccepting = true);
@@ -735,7 +840,7 @@ class _BookingCardState extends State<_BookingCard> {
                         }
                       },
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: AppTheme.primary,
+                  backgroundColor: widget.seatsFull ? AppTheme.border : AppTheme.primary,
                   foregroundColor: Colors.white,
                   minimumSize: const Size(0, 42),
                   shape: RoundedRectangleBorder(

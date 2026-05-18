@@ -11,6 +11,7 @@ import 'package:geocoding/geocoding.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/utils/snack_helper.dart';
 import '../../data/services/ride_service.dart';
 
 import '../../core/constants/env_config.dart';
@@ -49,7 +50,7 @@ class _FindRideScreenState extends State<FindRideScreen> {
   bool _isLoadingRoute = false;
 
   // ── Autocomplete — offer-ride style (single list + activeField) ───
-  String? _activeField;                      // 'from' | 'to'
+  String? _activeField;                    
   List<Map<String, dynamic>> _suggestions = [];
   Timer?  _debounce;
   String  _lastQuery = '';
@@ -59,7 +60,6 @@ class _FindRideScreenState extends State<FindRideScreen> {
   String? _activeBookingStatus;
   String? _activeBookingRideId;        
   bool _checkingActiveBooking = false;
-  int _seatsNeeded = 1;
 
   @override
   void initState() {
@@ -170,7 +170,7 @@ class _FindRideScreenState extends State<FindRideScreen> {
       await _addressFromLatLng(ll, _fromController);
     } catch (e) {
       setState(() => _isLoadingLocation = false);
-      // FIX 4: Friendly location error
+      // Friendly location error
       if (mounted) {
         final msg = e.toString().contains('network') || e.toString().contains('SocketException')
             ? 'No internet — could not get location. Please check your Wi-Fi.'
@@ -476,10 +476,12 @@ class _FindRideScreenState extends State<FindRideScreen> {
   }
 
   void _search() {
-    if (_fromController.text.isEmpty || _toController.text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter pickup and destination')),
-      );
+    if (_toController.text.isEmpty) {
+      showErrorSnack(context, 'Please enter a destination to search for rides.');
+      return;
+    }
+    if (_fromController.text.isEmpty) {
+      showErrorSnack(context, 'Please enter a pickup location.');
       return;
     }
     final dt = DateTime(
@@ -827,42 +829,6 @@ class _FindRideScreenState extends State<FindRideScreen> {
                     ),
 
                     const SizedBox(height: 10),
-
-                    // ── Seats needed filter ──────────────────────
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                      child: Row(children: [
-                        const Icon(Icons.event_seat_outlined, size: 18, color: AppTheme.textMedium),
-                        const SizedBox(width: 8),
-                        const Text('Seats needed:', style: TextStyle(fontSize: 13, color: AppTheme.textMedium)),
-                        const Spacer(),
-                        GestureDetector(
-                          onTap: _seatsNeeded > 1 ? () => setState(() => _seatsNeeded--) : null,
-                          child: Container(
-                            width: 28, height: 28,
-                            decoration: BoxDecoration(
-                              color: _seatsNeeded > 1 ? AppTheme.primary.withOpacity(0.1) : AppTheme.border,
-                              shape: BoxShape.circle),
-                            child: Icon(Icons.remove, size: 16,
-                                color: _seatsNeeded > 1 ? AppTheme.primary : AppTheme.textLight)),
-                        ),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 14),
-                          child: Text('$_seatsNeeded',
-                              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppTheme.textDark)),
-                        ),
-                        GestureDetector(
-                          onTap: _seatsNeeded < 3 ? () => setState(() => _seatsNeeded++) : null,
-                          child: Container(
-                            width: 28, height: 28,
-                            decoration: BoxDecoration(
-                              color: _seatsNeeded < 3 ? AppTheme.primary.withOpacity(0.1) : AppTheme.border,
-                              shape: BoxShape.circle),
-                            child: Icon(Icons.add, size: 16,
-                                color: _seatsNeeded < 3 ? AppTheme.primary : AppTheme.textLight)),
-                        ),
-                      ]),
-                    ),
 
                     // ── Distance info ─────────────────────────────
                     if (hasRoute)

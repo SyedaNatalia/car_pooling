@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/theme/app_theme.dart';
 import '../../data/services/auth_service.dart';
+import 'signup_screen.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
@@ -55,11 +56,22 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
         email: _emailController.text.trim(),
         password: _passwordController.text,
       );
-      // Router's redirect will automatically navigate to /home
+      // emailVerified + Firestore profile exists → router goes to /home
     } catch (e) {
-      if (mounted) {
-        setState(() => _errorMessage = _friendlyError(e.toString()));
+      if (!mounted) return;
+      final msg = e.toString().replaceAll('Exception: ', '');
+
+      if (msg.startsWith('email_not_verified:')) {
+        final email = msg.replaceFirst('email_not_verified:', '');
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => EmailVerificationWaitScreen(email: email),
+          ),
+        );
+        return;
       }
+
+      setState(() => _errorMessage = _friendlyError(msg));
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -114,17 +126,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                   child: Column(
                     children: [
                       Container(
-                        width: 72,
-                        height: 72,
+                        width: 120,
+                        height: 120,
                         decoration: BoxDecoration(
                           color: AppTheme.primaryLight,
                           borderRadius: BorderRadius.circular(20),
                         ),
-                        child: const Icon(
-                          Icons.directions_car_rounded,
-                          color: AppTheme.primary,
-                          size: 36,
-                        ),
+                        child: Image.asset('assets/images/logo.jpeg', width: 120, height: 120),
                       ),
                       const SizedBox(height: 16),
                       const Text(

@@ -293,27 +293,6 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                                         color: AppTheme.success,
                                         fontWeight: FontWeight.w500)),
                               ],
-                              // Message button — booking_accepted
-                              if (type == 'booking_accepted' || type == 'booking_accepted_driver') ...[
-                                const SizedBox(height: 10),
-                                SizedBox(
-                                  width: double.infinity,
-                                  child: OutlinedButton.icon(
-                                    onPressed: () {
-                                      final rId = n['rideId'] as String? ?? '';
-                                      if (rId.isNotEmpty) context.push('/chat/$rId');
-                                    },
-                                    icon: const Icon(Icons.message_outlined, size: 15),
-                                    label: const Text('Message', style: TextStyle(fontSize: 12)),
-                                    style: OutlinedButton.styleFrom(
-                                      foregroundColor: AppTheme.primary,
-                                      side: BorderSide(color: AppTheme.primary.withOpacity(0.5)),
-                                      padding: const EdgeInsets.symmetric(vertical: 7),
-                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                    ),
-                                  ),
-                                ),
-                              ],
                             ],
                           ),
                         ),

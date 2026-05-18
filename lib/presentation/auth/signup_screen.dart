@@ -1,7 +1,10 @@
+import 'dart:async';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/constants/app_constants.dart';
+import '../../core/router/app_router.dart';
 import '../../data/services/auth_service.dart';
 
 class SignupScreen extends StatefulWidget {
@@ -47,7 +50,8 @@ class _SignupScreenState extends State<SignupScreen> {
     });
 
     try {
-      await AuthService().signUp(
+      // signUp() now returns the email and keeps user signed-in for polling
+      final email = await AuthService().signUp(
         name: _nameController.text.trim(),
         email: _emailController.text.trim(),
         password: _passwordController.text,
@@ -56,11 +60,30 @@ class _SignupScreenState extends State<SignupScreen> {
         department: _selectedDepartment,
         role: _selectedRole,
       );
-      // Router's redirect will automatically navigate to /home
-    } catch (e) {
+      // DO NOT sign out — EmailVerificationWaitScreen needs currentUser
       if (mounted) {
-        setState(() => _errorMessage = _friendlyError(e.toString()));
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (_) => EmailVerificationWaitScreen(email: email),
+          ),
+        );
       }
+    } catch (e) {
+      if (!mounted) return;
+      final msg = e.toString().replaceAll('Exception: ', '');
+
+      if (msg == 'already_verified') {
+        setState(() => _errorMessage =
+            'This email is already registered and verified.\nPlease login instead.');
+        return;
+      }
+      if (msg == 'email_taken') {
+        setState(() => _errorMessage =
+            'An account already exists with this email.\nPlease login or use a different email.');
+        return;
+      }
+
+      setState(() => _errorMessage = _friendlyError(msg));
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -78,7 +101,7 @@ class _SignupScreenState extends State<SignupScreen> {
       return 'Connection timed out. Your internet may be slow — please try again.';
     }
     if (msg.contains('already exists') || msg.contains('email-already-in-use')) {
-      return 'An account already exists with this email. Please login or use a different email.';
+      return 'An account already exists with this email.\nPlease login instead, or use a different email.';
     }
     if (msg.contains('weak-password') || msg.contains('at least 6') || msg.contains('at least 8')) {
       return 'Password must be at least 8 characters long.';
@@ -118,20 +141,22 @@ class _SignupScreenState extends State<SignupScreen> {
           keyboardType: TextInputType.emailAddress,
           textInputAction: TextInputAction.next,
           decoration: const InputDecoration(
-            hintText: 'example@gmail.com',
+            hintText: 'yourname@olivetech.com.pk',
             prefixIcon:
                 Icon(Icons.email_outlined, color: AppTheme.textDark),
           ),
-          // validator: (v) {
-          //   if (v == null || v.isEmpty) return 'Email is required';
-          //   if (!v.contains('@') || !v.contains('.')) return 'Enter a valid email address';
-          //   final allowed = ['ffc.com.pk', 'olive.com', 'sone.com', 'fojifoods.com'];
-          //   final lower = v.trim().toLowerCase();
-          //   if (!allowed.any((d) => lower.endsWith('@\$d'))) {
-          //     return 'Only company emails allowed\n(e.g. yourname@ffc.com.pk)';
-          //   }
-          //   return null;
-          // },
+          validator: (v) {
+            if (v == null || v.isEmpty) return 'Email is required';
+            if (!v.contains('@') || !v.contains('.')) return 'Enter a valid email address';
+            final lower = v.trim().toLowerCase();
+            // ✅ @gmail.com allowed temporarily for testing
+            final isAllowed = lower.endsWith(AppConstants.companyDomain) ||
+                lower.endsWith('@gmail.com');
+            if (!isAllowed) {
+              return 'Only company email allowed\n(e.g. yourname${AppConstants.companyDomain})';
+            }
+            return null;
+          },
         ),
         const SizedBox(height: 16),
         _fieldLabel('Phone Number'),
@@ -145,8 +170,14 @@ class _SignupScreenState extends State<SignupScreen> {
             prefixIcon:
                 Icon(Icons.phone_outlined, color: AppTheme.textDark),
           ),
-          validator: (v) =>
-              v == null || v.isEmpty ? 'Phone number is required' : null,
+        validator: (v) {
+              if (v == null || v.isEmpty) return 'Phone number is required';
+              // Accept 03XXXXXXXXX (11 digits) or +92XXXXXXXXXX (13 chars)
+              final digits = v.replaceAll(RegExp(r'[\s\-]'), '');
+              final valid = RegExp(r'^(03\d{9}|(\+92)\d{10})$').hasMatch(digits);
+              if (!valid) return 'Enter a valid Pakistani number\n(e.g. 03XX-XXXXXXX or +92XXXXXXXXXX)';
+              return null;
+            },
         ),
       ],
     );
@@ -500,6 +531,328 @@ class _SignupScreenState extends State<SignupScreen> {
                 const SizedBox(height: 24),
               ],
             ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class EmailVerificationWaitScreen extends StatefulWidget {
+  final String email;
+  const EmailVerificationWaitScreen({super.key, required this.email});
+
+  @override
+  State<EmailVerificationWaitScreen> createState() =>
+      _EmailVerificationWaitScreenState();
+}
+
+class _EmailVerificationWaitScreenState
+    extends State<EmailVerificationWaitScreen> with WidgetsBindingObserver {
+  final _authService = AuthService();
+
+  Timer? _pollTimer;
+  bool _isVerifying = false;
+  bool _isSending = false;
+  bool _justSent = false;
+  Timer? _cooldownTimer;
+  String? _infoMessage;
+  bool _isError = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this); // ✅ watch app foreground/background
+    _startPolling();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this); // ✅ clean up observer
+    _pollTimer?.cancel();
+    _cooldownTimer?.cancel();
+    super.dispose();
+  }
+
+  // ✅ Called automatically when user comes back to app from email client
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && !_isVerifying) {
+      _checkOnce();
+    }
+  }
+
+  // Single immediate check — used on app resume
+  Future<void> _checkOnce() async {
+    try {
+      final verified = await _authService.checkEmailVerified();
+      if (verified && mounted) {
+        _pollTimer?.cancel();
+        await _onVerified();
+      }
+    } catch (_) {}
+  }
+
+  // ── Polling (every 4s as backup) ──────────────────────────────────────────
+  void _startPolling() {
+    _pollTimer = Timer.periodic(const Duration(seconds: 4), (_) async {
+      if (_isVerifying) return;
+      await _checkOnce();
+    });
+  }
+
+  Future<void> _onVerified() async {
+    if (!mounted || _isVerifying) return;
+    setState(() => _isVerifying = true);
+    _pollTimer?.cancel();
+
+    try {
+      await _authService.finaliseProfile(); // ✅ create Firestore account
+
+      RouterRefreshNotifier.instance.refresh();
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Email verified! Welcome aboard 🎉'),
+          backgroundColor: AppTheme.success,
+          duration: Duration(seconds: 2),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isVerifying = false;
+        _infoMessage = 'Account setup failed. Please try logging in.';
+        _isError = true;
+      });
+    }
+  }
+
+  // ── Resend ─────────────────────────────────────────────────────────────────
+  Future<void> _resend() async {
+    if (_isSending || _justSent) return;
+    setState(() {
+      _isSending = true;
+      _infoMessage = null;
+      _isError = false;
+    });
+    try {
+      await _authService.resendVerificationEmail();
+      if (!mounted) return;
+      setState(() {
+        _justSent = true;
+        _isSending = false;
+        _infoMessage = 'Verification email sent! Check your inbox & spam folder.';
+        _isError = false;
+      });
+      // 60s cooldown before allowing another resend
+      _cooldownTimer = Timer(const Duration(seconds: 60), () {
+        if (mounted) setState(() { _justSent = false; _infoMessage = null; });
+      });
+    } catch (e) {
+      if (!mounted) return;
+      final msg = e.toString().replaceAll('Exception: ', '');
+      if (msg == 'already_verified') {
+        // Race condition: they verified while tapping resend
+        _pollTimer?.cancel();
+        await _onVerified();
+        return;
+      }
+      setState(() {
+        _isSending = false;
+        _infoMessage = msg.contains('Session expired')
+            ? 'Session expired. Please go back and sign up again.'
+            : 'Could not send email. Please check your connection and try again.';
+        _isError = true;
+      });
+    }
+  }
+
+  // ── Back to Login ──────────────────────────────────────────────────────────
+  Future<void> _backToLogin() async {
+    _pollTimer?.cancel();
+    await _authService.signOut();
+    if (mounted) context.go('/auth/login');
+  }
+
+  // ── Build ──────────────────────────────────────────────────────────────────
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppTheme.bgLight,
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 32),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              const SizedBox(height: 32),
+
+              // Icon
+              Container(
+                width: 96,
+                height: 96,
+                decoration: const BoxDecoration(
+                  color: AppTheme.primaryLight,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.mark_email_unread_outlined,
+                    size: 48, color: AppTheme.primary),
+              ),
+
+              const SizedBox(height: 28),
+
+              const Text(
+                'Verify your email',
+                style: TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w700,
+                    color: AppTheme.textDark),
+                textAlign: TextAlign.center,
+              ),
+
+              const SizedBox(height: 12),
+
+              const Text(
+                'We sent a verification link to',
+                style: TextStyle(fontSize: 14, color: AppTheme.textMedium),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 4),
+              Text(
+                widget.email,
+                style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: AppTheme.primary),
+                textAlign: TextAlign.center,
+              ),
+
+              const SizedBox(height: 16),
+
+              const Text(
+                'Open your email and click the verification link. This page will update automatically once you\'ve verified.',
+                style: TextStyle(
+                    fontSize: 13, color: AppTheme.textMedium, height: 1.6),
+                textAlign: TextAlign.center,
+              ),
+
+              const SizedBox(height: 12),
+
+              // Info box
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF8E1),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: const Color(0xFFFFE082)),
+                ),
+                child: const Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(Icons.info_outline,
+                        size: 16, color: Color(0xFFF59E0B)),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        // ✅ @gmail.com allowed temporarily for testing
+                        'No email? Check your spam folder. Make sure you used a valid ${AppConstants.companyDomain} or @gmail.com address.',
+                        style: TextStyle(
+                            fontSize: 12,
+                            color: Color(0xFF92400E),
+                            height: 1.5),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 28),
+
+              // Status indicator
+              if (_isVerifying)
+                const Column(
+                  children: [
+                    CircularProgressIndicator(color: AppTheme.primary),
+                    SizedBox(height: 10),
+                    Text('Setting up your account…',
+                        style: TextStyle(
+                            fontSize: 13, color: AppTheme.textMedium)),
+                  ],
+                )
+              else
+                const Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: AppTheme.primary),
+                    ),
+                    SizedBox(width: 10),
+                    Text('Checking verification status…',
+                        style: TextStyle(
+                            fontSize: 12, color: AppTheme.textLight)),
+                  ],
+                ),
+
+              const SizedBox(height: 24),
+
+              // Resend button
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: (_isSending || _justSent || _isVerifying)
+                      ? null
+                      : _resend,
+                  icon: _isSending
+                      ? const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2, color: AppTheme.primary))
+                      : const Icon(Icons.refresh, size: 18),
+                  label: Text(_justSent
+                      ? 'Email sent — check inbox'
+                      : 'Resend verification email'),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    side: const BorderSide(color: AppTheme.primary),
+                    foregroundColor: AppTheme.primary,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
+              ),
+
+              if (_infoMessage != null) ...[
+                const SizedBox(height: 10),
+                Text(
+                  _infoMessage!,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: _isError ? AppTheme.error : AppTheme.success,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+
+              const SizedBox(height: 12),
+
+              // Back to login
+              TextButton(
+                onPressed: _isVerifying ? null : _backToLogin,
+                child: const Text(
+                  'Back to Login',
+                  style: TextStyle(
+                      fontSize: 13,
+                      color: AppTheme.textMedium,
+                      decoration: TextDecoration.underline),
+                ),
+              ),
+            ],
           ),
         ),
       ),

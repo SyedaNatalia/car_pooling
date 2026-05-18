@@ -162,89 +162,92 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text('${_greeting()},',
-                                  style: const TextStyle(
-                                      color: Colors.white, fontSize: 14)),
-                              const SizedBox(height: 2),
-                              Text(
-                                _user?.name.split(' ').first ?? 'Welcome',
-                                style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 22,
-                                    fontWeight: FontWeight.w700),
-                              ),
-                            ],
-                          ),
-                        ),
-                        Stack(
-                          children: [
-                            IconButton(
-                              onPressed: () => context.push('/notifications'),
-                              icon: const Icon(Icons.notifications_outlined,
-                                  color: Colors.white, size: 24),
-                            ),
-                            StreamBuilder<QuerySnapshot>(
-                              stream: FirebaseFirestore.instance
-                                  .collection('notifications')
-                                  .where('userId',
-                                      isEqualTo:
-                                          FirebaseAuth.instance.currentUser?.uid ?? '')
-                                  .where('isRead', isEqualTo: false)
-                                  .snapshots(),
-                              builder: (_, snap) {
-                                final count = snap.data?.docs.length ?? 0;
-                                if (count == 0) return const SizedBox.shrink();
-                                return Positioned(
-                                  right: 6, top: 6,
-                                  child: Container(
-                                    width: 16, height: 16,
-                                    decoration: const BoxDecoration(
-                                        color: Colors.red,
-                                        shape: BoxShape.circle),
-                                    child: Center(
-                                      child: Text(
-                                        count > 9 ? '9+' : '$count',
-                                        style: const TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 9,
-                                            fontWeight: FontWeight.w700),
-                                      ),
-                                    ),
-                                  ),
-                                );
-                              },
-                            ),
-                          ],
-                        ),
-                        const SizedBox(width: 4),
-                        GestureDetector(
-                          onTap: () => context.go('/profile'),
-                          child: CircleAvatar(
-                            radius: 22,
-                            backgroundColor: Colors.white.withOpacity(0.2),
-                            backgroundImage: _user?.photoUrl != null
-                                ? NetworkImage(_user!.photoUrl!)
-                                : null,
-                            child: _user?.photoUrl == null
-                                ? Text(
-                                    _user?.name
-                                            .substring(0, 1)
-                                            .toUpperCase() ??
-                                        'U',
-                                    style: const TextStyle(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.w600))
-                                : null,
-                          ),
-                        ),
-                      ],
-                    ),
+                   Row(
+  children: [
+    CircleAvatar(
+      radius: 30,
+      backgroundColor: Colors.white,
+      child: ClipOval(
+        child: Image.asset('assets/icons/icon.jpeg',
+            width: 50, height: 50, fit: BoxFit.cover),
+      ),
+    ),
+    const SizedBox(width: 12),
+    Expanded(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('${_greeting()},',
+              style: const TextStyle(color: Colors.white, fontSize: 14)),
+          const SizedBox(height: 2),
+          Text(
+            _user?.name.split(' ').first ?? 'Welcome',
+            style: const TextStyle(
+                color: Colors.white,
+                fontSize: 22,
+                fontWeight: FontWeight.w700),
+          ),
+        ],
+      ),
+    ),
+    Stack(
+      children: [
+        IconButton(
+          onPressed: () => context.push('/notifications'),
+          icon: const Icon(Icons.notifications_outlined,
+              color: Colors.white, size: 24),
+        ),
+        StreamBuilder<QuerySnapshot>(
+          stream: FirebaseFirestore.instance
+              .collection('notifications')
+              .where('userId',
+                  isEqualTo:
+                      FirebaseAuth.instance.currentUser?.uid ?? '')
+              .where('isRead', isEqualTo: false)
+              .snapshots(),
+          builder: (_, snap) {
+            final count = snap.data?.docs.length ?? 0;
+            if (count == 0) return const SizedBox.shrink();
+            return Positioned(
+              right: 6, top: 6,
+              child: Container(
+                width: 16, height: 16,
+                decoration: const BoxDecoration(
+                    color: Colors.red, shape: BoxShape.circle),
+                child: Center(
+                  child: Text(
+                    count > 9 ? '9+' : '$count',
+                    style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 9,
+                        fontWeight: FontWeight.w700),
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
+      ],
+    ),
+    const SizedBox(width: 4),
+    GestureDetector(
+      onTap: () => context.go('/profile'),
+      child: CircleAvatar(
+        radius: 22,
+        backgroundColor: Colors.white.withOpacity(0.2),
+        backgroundImage: _user?.photoUrl != null
+            ? NetworkImage(_user!.photoUrl!)
+            : null,
+        child: _user?.photoUrl == null
+            ? Text(
+                _user?.name.substring(0, 1).toUpperCase() ?? 'U',
+                style: const TextStyle(
+                    color: Colors.white, fontWeight: FontWeight.w600))
+            : null,
+      ),
+    ),
+  ],
+),
                     const SizedBox(height: 20),
                     // Quick action cards
                     Row(

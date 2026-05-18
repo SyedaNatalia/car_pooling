@@ -1,4 +1,4 @@
-# carpooling_app
+# FairFare Carpool
 
 A new Flutter project.
 

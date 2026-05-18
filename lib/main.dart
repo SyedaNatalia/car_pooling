@@ -32,13 +32,14 @@ void main() async {
     sound: true,
   );
 
-  // Save FCM token to Firestore when user is logged in
+  // Save FCM token to Firestore — only for verified users who have a profile
   FirebaseMessaging.instance.onTokenRefresh.listen((token) async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid != null) {
+    final user = FirebaseAuth.instance.currentUser;
+    // ✅ Only update if email is verified (unverified users have no Firestore doc)
+    if (user != null && user.emailVerified) {
       await FirebaseFirestore.instance
           .collection('users')
-          .doc(uid)
+          .doc(user.uid)
           .update({'fcmToken': token});
     }
   });
@@ -55,7 +56,7 @@ class MyApp extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final router = ref.watch(appRouterProvider);
     return MaterialApp.router(
-      title: 'RideTogether',
+      title: 'FairFare Carpool',
       theme: AppTheme.lightTheme,
       routerConfig: router,
       debugShowCheckedModeBanner: false,
