@@ -554,7 +554,7 @@ class _OfferRideScreenState extends State<OfferRideScreen> {
           ),
         ),
         const SizedBox(height: 20),
-        const _FieldLabel(label: 'Start Location', icon: Icons.radio_button_checked, color: AppTheme.success),
+        const _FieldLabel(label: 'Start Location', icon: Icons.radio_button_checked, color: AppTheme.primary),
         const SizedBox(height: 8),
         _LocationInputField(
           controller: _startController,
@@ -623,7 +623,7 @@ class _OfferRideScreenState extends State<OfferRideScreen> {
         ),
 
         const SizedBox(height: 8),
-        const _FieldLabel(label: 'End Location', icon: Icons.location_on, color: AppTheme.error),
+        const _FieldLabel(label: 'End Location', icon: Icons.location_on, color: AppTheme.primary),
         const SizedBox(height: 8),
         _LocationInputField(
           controller: _endController,
@@ -729,7 +729,7 @@ class _OfferRideScreenState extends State<OfferRideScreen> {
                   keyboardType: TextInputType.number,
                   style: const TextStyle(fontSize: 15, color: AppTheme.textDark),
                   decoration: const InputDecoration(
-                    hintText: 'e.g. 500',
+                    hintText: 'Enter your Fare',
                     border: InputBorder.none,
                   ),
                   onChanged: (v) {
@@ -788,14 +788,14 @@ class _OfferRideScreenState extends State<OfferRideScreen> {
         ]),
 
         const SizedBox(height: 24),
-        const Text('Notes (optional)',
+        const Text('Notes',
             style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: AppTheme.textDark)),
         const SizedBox(height: 8),
         TextFormField(
           controller: _notesController,
           maxLines: 3,
           decoration: const InputDecoration(
-            hintText: 'e.g. I can pick up from nearby streets, no pets please...',
+            hintText: 'Write Your Note',
             alignLabelWithHint: true,
           ),
         ),

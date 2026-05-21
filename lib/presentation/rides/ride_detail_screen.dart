@@ -428,31 +428,6 @@ class _PassengerTrackingScreen extends StatelessWidget {
       ),
       body: Column(
         children: [
-          // Status banner
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-            color: AppTheme.success,
-            child: Row(
-              children: [
-                const Icon(Icons.radio_button_checked,
-                    color: Colors.white, size: 18),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    driverLocation != null
-                        ? 'Driver is on the way — tracking live'
-                        : 'Ride started — waiting for driver location…',
-                    style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w500,
-                        fontSize: 13),
-                  ),
-                ),
-              ],
-            ),
-          ),
-
           // Full map
           Expanded(
             child: Stack(
@@ -668,6 +643,34 @@ class _DriverCard extends StatelessWidget {
                         fontSize: 16,
                         fontWeight: FontWeight.w600,
                         color: AppTheme.textDark)),
+                if (ride.driverGender != null && ride.driverGender!.isNotEmpty) ...[ 
+                  const SizedBox(height: 4),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: ride.driverGender!.toLowerCase() == 'female'
+                          ? const Color(0xFFFCE4EC)
+                          : const Color(0xFFE3F2FD),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      Icon(
+                        ride.driverGender!.toLowerCase() == 'female'
+                            ? Icons.female : Icons.male,
+                        size: 11,
+                        color: ride.driverGender!.toLowerCase() == 'female'
+                            ? const Color(0xFFAD1457) : const Color(0xFF1565C0),
+                      ),
+                      const SizedBox(width: 2),
+                      Text(ride.driverGender![0].toUpperCase() + ride.driverGender!.substring(1),
+                          style: TextStyle(
+                            fontSize: 10, fontWeight: FontWeight.w600,
+                            color: ride.driverGender!.toLowerCase() == 'female'
+                                ? const Color(0xFFAD1457) : const Color(0xFF1565C0),
+                          )),
+                    ]),
+                  ),
+                ],
                 const SizedBox(height: 4),
                 // Row(
                 //   children: [

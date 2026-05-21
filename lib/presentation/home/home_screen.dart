@@ -1,17 +1,13 @@
 // ignore_for_file: deprecated_member_use
 
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../core/theme/app_theme.dart';
-import '../../data/services/auth_service.dart';
-import '../../data/services/ride_service.dart';
 import '../../data/models/ride_model.dart';
-import '../../data/models/user_model.dart';
-import '../widgets/animated_empty_state.dart';
+import '../../data/providers/app_providers.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -21,29 +17,29 @@ class HomeScreen extends ConsumerStatefulWidget {
 }
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
-  UserModel? _user;
-  // Active booking info
-  String? _activeBookingRideId;
-  RideModel? _activeBookedRide;
-  bool _loadingBookedRide = false;
-
-  // Role-based restrictions
-  bool _isDriver = false;            
-
-  // Driver/Rider role restrictions
-  bool _hasActiveRide = false;       
-  bool _hasActiveBooking = false;    
-
-  final _authService = AuthService();
-  final _rideService = RideService();
+  Timer? _expireTimer;
 
   @override
   void initState() {
     super.initState();
-    _loadUser();
-    _rideService.autoExpireRides(); 
-    _loadActiveBookedRide();
-    _checkRoleRestrictions();
+    // Expire stale rides on app open — fire-and-forget, result not awaited.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(rideServiceProvider).autoExpireRides();
+    });
+    // Re-check every minute so expired rides are removed from the home screen
+    // without requiring a logout or app restart.
+    _expireTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+      if (!mounted) return;
+      // Only hit Firestore if the user currently has an active booking.
+      final hasBooking = ref.read(activeBookingProvider).valueOrNull != null;
+      if (hasBooking) ref.read(rideServiceProvider).autoExpireRides();
+    });
+  }
+
+  @override
+  void dispose() {
+    _expireTimer?.cancel();
+    super.dispose();
   }
 
   void _showActiveRideNotice(BuildContext context, {required bool isDriver}) {
@@ -51,84 +47,25 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       context: context,
       backgroundColor: Colors.transparent,
       builder: (_) => _ActiveRideNoticeSheet(isDriver: isDriver),
-    ).then((_) => _checkRoleRestrictions()); 
+    );
   }
 
   void _showPassengerBookingSheet(BuildContext context) {
+    // Read snapshot value — modal content does not need to be reactive.
+    final activeBookedRide = ref.read(activeBookedRideProvider).valueOrNull;
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
       builder: (_) => _PassengerActiveBookingSheet(
-        activeBookedRide: _activeBookedRide,
-        onDismiss: () {
-          Navigator.pop(context);
-          _checkRoleRestrictions();
-          _loadActiveBookedRide();
-        },
+        activeBookedRide: activeBookedRide,
+        onDismiss: () => Navigator.pop(context),
         onGoToBookings: () {
           Navigator.pop(context);
           context.push('/my-bookings');
         },
       ),
-    ).then((_) {
-      _checkRoleRestrictions();
-      _loadActiveBookedRide();
-    });
-  }
-
-  Future<void> _loadUser() async {
-    final user = await _authService.getCurrentUserProfile();
-    if (mounted) {
-      setState(() {
-      _user = user;
-      _isDriver = user?.carDetails != null &&
-          user!.carDetails!.plateNumber.isNotEmpty;
-    });
-    }
-  }
-
-  // Driver active then Find Ride disable
-  // Rider active booking then Offer Ride disable
-  Future<void> _checkRoleRestrictions() async {
-    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
-    if (uid.isEmpty) return;
-    try {
-      final hasRide = await _rideService.hasActiveRide(uid);
-      final hasBooking = await _rideService.hasActivePendingBooking(uid);
-      if (mounted) {
-        setState(() {
-        _hasActiveRide = hasRide;
-        _hasActiveBooking = hasBooking;
-      });
-      }
-    } catch (_) {}
-  }
-
-
-  // Load the ride that the current rider has actively booked
-  Future<void> _loadActiveBookedRide() async {
-    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
-    if (uid.isEmpty) return;
-    setState(() => _loadingBookedRide = true);
-    try {
-      final snap = await FirebaseFirestore.instance
-          .collection('bookings')
-          .where('passengerId', isEqualTo: uid)
-          .where('status', whereIn: ['pending', 'accepted'])
-          .limit(1)
-          .get();
-      if (snap.docs.isNotEmpty) {
-        final rideId = snap.docs.first.data()['rideId'] as String? ?? '';
-        if (rideId.isNotEmpty) {
-          final ride = await _rideService.getRideById(rideId);
-          if (mounted) setState(() { _activeBookingRideId = rideId; _activeBookedRide = ride; });
-        }
-      } else {
-        if (mounted) setState(() { _activeBookingRideId = null; _activeBookedRide = null; });
-      }
-    } catch (_) {}
-    if (mounted) setState(() => _loadingBookedRide = false);
+    );
   }
 
   String _greeting() {
@@ -141,14 +78,25 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // All data comes from reactive Riverpod providers — no manual Firestore calls.
+    final user = ref.watch(currentUserProvider).valueOrNull;
+    final isDriver = user?.carDetails != null &&
+        user!.carDetails!.plateNumber.isNotEmpty;
+
+    final activeBookedRide = ref.watch(activeBookedRideProvider).valueOrNull;
+    final isLoadingBookedRide = ref.watch(activeBookedRideProvider).isLoading;
+
+    final hasActiveRide = ref.watch(hasActiveRideProvider);
+    final hasActiveBooking = ref.watch(hasActiveBookingProvider);
+
+    // Single shared stream — no duplicate Firestore listeners.
+    final unreadCount = ref.watch(unreadNotifCountProvider).valueOrNull ?? 0;
+
     return Scaffold(
       backgroundColor: AppTheme.bgLight,
       body: RefreshIndicator(
-        onRefresh: () async {
-          await _loadUser();
-          await _loadActiveBookedRide();
-          await _checkRoleRestrictions();
-        },
+        // Providers are live streams — refreshing is a UX hint only.
+        onRefresh: () => Future.delayed(const Duration(milliseconds: 400)),
         child: CustomScrollView(
           slivers: [
             // Header
@@ -181,7 +129,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               style: const TextStyle(color: Colors.white, fontSize: 14)),
           const SizedBox(height: 2),
           Text(
-            _user?.name.split(' ').first ?? 'Welcome',
+            user?.name.split(' ').first ?? 'Welcome',
             style: const TextStyle(
                 color: Colors.white,
                 fontSize: 22,
@@ -197,36 +145,24 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           icon: const Icon(Icons.notifications_outlined,
               color: Colors.white, size: 24),
         ),
-        StreamBuilder<QuerySnapshot>(
-          stream: FirebaseFirestore.instance
-              .collection('notifications')
-              .where('userId',
-                  isEqualTo:
-                      FirebaseAuth.instance.currentUser?.uid ?? '')
-              .where('isRead', isEqualTo: false)
-              .snapshots(),
-          builder: (_, snap) {
-            final count = snap.data?.docs.length ?? 0;
-            if (count == 0) return const SizedBox.shrink();
-            return Positioned(
-              right: 6, top: 6,
-              child: Container(
-                width: 16, height: 16,
-                decoration: const BoxDecoration(
-                    color: Colors.red, shape: BoxShape.circle),
-                child: Center(
-                  child: Text(
-                    count > 9 ? '9+' : '$count',
-                    style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 9,
-                        fontWeight: FontWeight.w700),
-                  ),
+        if (unreadCount > 0)
+          Positioned(
+            right: 6, top: 6,
+            child: Container(
+              width: 16, height: 16,
+              decoration: const BoxDecoration(
+                  color: Colors.red, shape: BoxShape.circle),
+              child: Center(
+                child: Text(
+                  unreadCount > 9 ? '9+' : '$unreadCount',
+                  style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 9,
+                      fontWeight: FontWeight.w700),
                 ),
               ),
-            );
-          },
-        ),
+            ),
+          ),
       ],
     ),
     const SizedBox(width: 4),
@@ -235,12 +171,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       child: CircleAvatar(
         radius: 22,
         backgroundColor: Colors.white.withOpacity(0.2),
-        backgroundImage: _user?.photoUrl != null
-            ? NetworkImage(_user!.photoUrl!)
+        backgroundImage: user?.photoUrl != null
+            ? NetworkImage(user!.photoUrl!)
             : null,
-        child: _user?.photoUrl == null
+        child: user?.photoUrl == null
             ? Text(
-                _user?.name.substring(0, 1).toUpperCase() ?? 'U',
+                user?.name.substring(0, 1).toUpperCase() ?? 'U',
                 style: const TextStyle(
                     color: Colors.white, fontWeight: FontWeight.w600))
             : null,
@@ -256,11 +192,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                           child: _QuickActionCard(
                             icon: Icons.search,
                             title: 'Find a ride',
-                            subtitle: _hasActiveRide
+                            subtitle: hasActiveRide
                                 ? 'Complete your ride first'
                                 : 'Book your seat',
                             onTap: () {
-                              if (_hasActiveRide) {
+                              if (hasActiveRide) {
                                 _showActiveRideNotice(context, isDriver: true);
                               } else {
                                 context.go('/find-ride');
@@ -274,11 +210,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                           child: _QuickActionCard(
                             icon: Icons.drive_eta,
                             title: 'Offer a ride',
-                            subtitle: _hasActiveBooking
+                            subtitle: hasActiveBooking
                                 ? 'Cancel booking first'
                                 : 'Share your car',
                             onTap: () {
-                              if (_hasActiveBooking) {
+                              if (hasActiveBooking) {
                                 _showPassengerBookingSheet(context);
                               } else {
                                 context.go('/offer-ride');
@@ -295,12 +231,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ),
 
             // ── Active Booked Ride Banner ──────────────────────────────
-            if (_activeBookedRide != null)
+            if (activeBookedRide != null)
               SliverToBoxAdapter(
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
                   child: GestureDetector(
-                    onTap: () => context.push('/ride/${_activeBookedRide!.id}'),
+                    onTap: () => context.push('/ride/${activeBookedRide.id}'),
                     child: Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
@@ -341,7 +277,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                           ),
                           const SizedBox(height: 10),
                           Text(
-                            '${_activeBookedRide!.startPoint.address.split(',').first} → ${_activeBookedRide!.endPoint.address.split(',').first}',
+                            '${activeBookedRide.startPoint.address.split(',').first} → ${activeBookedRide.endPoint.address.split(',').first}',
                             style: const TextStyle(color: Colors.white, fontSize: 15,
                                 fontWeight: FontWeight.w700),
                             maxLines: 1, overflow: TextOverflow.ellipsis,
@@ -350,13 +286,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                           Row(children: [
                             const Icon(Icons.person_outline, size: 13, color: Colors.white70),
                             const SizedBox(width: 4),
-                            Text(_activeBookedRide!.driverName,
+                            Text(activeBookedRide.driverName,
                                 style: const TextStyle(color: Colors.white70, fontSize: 12)),
                             const SizedBox(width: 8),
                             const Icon(Icons.access_time, size: 13, color: Colors.white70),
                             const SizedBox(width: 4),
                             Text(
-                              DateFormat('EEE, MMM d • h:mm a').format(_activeBookedRide!.departureTime),
+                              DateFormat('EEE, MMM d • h:mm a').format(activeBookedRide.departureTime),
                               style: const TextStyle(color: Colors.white70, fontSize: 12),
                             ),
                           ]),
@@ -371,14 +307,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               ),
 
             // ── No booked ride empty state ──────────────────────────
-            if (_activeBookedRide == null && !_loadingBookedRide)
+            if (activeBookedRide == null && !isLoadingBookedRide)
               SliverToBoxAdapter(
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
                   child: _HomeEmptyCard(
-                    isDriver: _isDriver,
-                    hasActiveRide: _hasActiveRide,
-                    hasActiveBooking: _hasActiveBooking,
+                    isDriver: isDriver,
+                    hasActiveRide: hasActiveRide,
+                    hasActiveBooking: hasActiveBooking,
                     onFindRideBlocked: () => _showActiveRideNotice(context, isDriver: true),
                     onOfferRideBlocked: () => _showPassengerBookingSheet(context),
                   ),
@@ -409,21 +345,30 @@ class _QuickActionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final opacity = disabled ? 0.45 : 1.0;
-    return Opacity(
-      opacity: opacity,
-      child: GestureDetector(
-        onTap: disabled ? null : onTap,
+    return GestureDetector(
+      onTap: disabled ? null : onTap,
+      child: AnimatedOpacity(
+        opacity: disabled ? 0.5 : 1.0,
+        duration: const Duration(milliseconds: 200),
         child: Container(
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(disabled ? 0.08 : 0.15),
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: Colors.white.withOpacity(0.25)),
+            color: Colors.white.withValues(alpha: disabled ? 0.08 : 0.18),
+            borderRadius: BorderRadius.circular(AppRadius.lg),
+            border: Border.all(
+                color: Colors.white.withValues(alpha: disabled ? 0.15 : 0.3)),
           ),
           child: Row(
             children: [
-              Icon(icon, color: Colors.white, size: 22),
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(AppRadius.md),
+                ),
+                child: Icon(icon, color: Colors.white, size: 20),
+              ),
               const SizedBox(width: 10),
               Expanded(
                 child: Column(
@@ -432,13 +377,24 @@ class _QuickActionCard extends StatelessWidget {
                     Text(title,
                         style: const TextStyle(
                             color: Colors.white,
-                            fontWeight: FontWeight.w600,
+                            fontWeight: FontWeight.w700,
                             fontSize: 13)),
+                    const SizedBox(height: 2),
                     Text(subtitle,
                         style: TextStyle(
-                            color: Colors.white.withOpacity(0.7), fontSize: 11)),
+                            color: Colors.white.withValues(alpha: 0.72),
+                            fontSize: 11),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis),
                   ],
                 ),
+              ),
+              Icon(
+                disabled
+                    ? Icons.lock_outline_rounded
+                    : Icons.chevron_right_rounded,
+                color: Colors.white.withValues(alpha: 0.6),
+                size: 18,
               ),
             ],
           ),
@@ -579,20 +535,17 @@ class _HomeEmptyCardState extends State<_HomeEmptyCard>
   late AnimationController _ctrl;
   late Animation<double> _fade;
   late Animation<Offset> _slide;
-  late Animation<double> _iconBounce;
 
   @override
   void initState() {
     super.initState();
     _ctrl = AnimationController(
-        duration: const Duration(milliseconds: 800), vsync: this);
+        duration: const Duration(milliseconds: 500), vsync: this);
     _fade = CurvedAnimation(parent: _ctrl, curve: Curves.easeOut)
         .drive(Tween(begin: 0.0, end: 1.0));
-    _slide = Tween<Offset>(begin: const Offset(0, 0.2), end: Offset.zero)
+    _slide = Tween<Offset>(begin: const Offset(0, 0.12), end: Offset.zero)
         .animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeOut));
-    _iconBounce = Tween<double>(begin: 0, end: 6).animate(
-        CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut));
-    _ctrl.forward(); // sirf ek baar
+    _ctrl.forward();
   }
 
   @override
@@ -619,19 +572,12 @@ class _HomeEmptyCardState extends State<_HomeEmptyCard>
             ],
           ),
           child: Column(children: [
-            AnimatedBuilder(
-              animation: _ctrl,
-              builder: (_, child) => Transform.translate(
-                offset: Offset(0, -_iconBounce.value * 0.5),
-                child: child,
-              ),
-              child: Container(
-                width: 88, height: 88,
-                decoration: const BoxDecoration(
-                    color: AppTheme.primaryLight, shape: BoxShape.circle),
-                child: const Icon(Icons.directions_car_rounded,
-                    color: AppTheme.primary, size: 44),
-              ),
+            Container(
+              width: 88, height: 88,
+              decoration: const BoxDecoration(
+                  color: AppTheme.primaryLight, shape: BoxShape.circle),
+              child: const Icon(Icons.directions_car_rounded,
+                  color: AppTheme.primary, size: 44),
             ),
             const SizedBox(height: 18),
             const Text('No Active Ride',

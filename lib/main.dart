@@ -8,7 +8,24 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'core/theme/app_theme.dart';
 import 'core/utils/connectivity_wrapper.dart';
 import 'core/router/app_router.dart';
+import 'data/services/ride_service.dart';
 import 'firebase_options.dart';
+
+/// Catches unhandled errors from all Riverpod providers and logs them.
+/// Replace the debugPrint with FirebaseCrashlytics.instance.recordError
+/// once Crashlytics is added to the project.
+class _AppProviderObserver extends ProviderObserver {
+  @override
+  void providerDidFail(
+    ProviderBase<Object?> provider,
+    Object error,
+    StackTrace stackTrace,
+    ProviderContainer container,
+  ) {
+    debugPrint('[Riverpod] Provider ${provider.name ?? provider.runtimeType} '
+        'failed: $error');
+  }
+}
 
 // Background message handler (top-level function required by FCM)
 @pragma('vm:entry-point')
@@ -20,6 +37,13 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
+  );
+
+  // Enable Firestore offline persistence so the app stays usable on
+  // flaky networks and caches recently viewed rides/bookings locally.
+  FirebaseFirestore.instance.settings = const Settings(
+    persistenceEnabled: true,
+    cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
   );
 
   // FCM background handler
@@ -44,9 +68,24 @@ void main() async {
     }
   });
 
+  // Expire stale rides whenever a user logs in so the home screen and
+  // Find Ride screen never show past-departure rides on fresh session start.
+  // This covers the logout → re-login scenario where HomeScreen's timer
+  // hasn't fired yet.
+  FirebaseAuth.instance.authStateChanges().listen((user) {
+    if (user != null) {
+      RideService().autoExpireRides();
+    }
+  });
+
   await dotenv.load(fileName: ".env");
 
-  runApp(const ProviderScope(child: MyApp()));
+  runApp(
+    ProviderScope(
+      observers: [_AppProviderObserver()],
+      child: const MyApp(),
+    ),
+  );
 }
 
 class MyApp extends ConsumerWidget {

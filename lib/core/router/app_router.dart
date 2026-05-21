@@ -30,28 +30,23 @@ import '../../presentation/chat/chat_screen.dart';
 import '../../presentation/admin/admin_screen.dart';
 import '../../presentation/profile/rating_screen.dart';
 
-// ✅ Global notifier — call .refresh() after email verification to force
-// the router to re-evaluate its redirect (since authStateChanges does not
-// fire on emailVerified changes, only on sign-in/sign-out).
-class RouterRefreshNotifier extends ChangeNotifier {
-  static final instance = RouterRefreshNotifier._();
-  RouterRefreshNotifier._();
-  void refresh() => notifyListeners();
-}
-
 final appRouterProvider = Provider<GoRouter>((ref) {
-  final authNotifier = ValueNotifier<bool>(false);
+  // Single ValueNotifier that drives GoRouter's refreshListenable.
+  // We toggle it whenever either the Firebase auth state changes OR the
+  // manual routerRefreshProvider counter increments (e.g. after email
+  // verification — authStateChanges does not fire when emailVerified flips).
+  final refreshNotifier = ValueNotifier<bool>(false);
 
-  ref.listen(firebaseAuthStateProvider, (_, next) {
-    authNotifier.value = !authNotifier.value;
-  });
+  void toggle() => refreshNotifier.value = !refreshNotifier.value;
 
-  // Combine both: auth stream changes AND manual refresh after verification
-  final combined = Listenable.merge([authNotifier, RouterRefreshNotifier.instance]);
+  ref.listen(firebaseAuthStateProvider, (_, __) => toggle());
+  ref.listen(routerRefreshProvider, (_, __) => toggle());
+
+  ref.onDispose(refreshNotifier.dispose);
 
   return GoRouter(
     initialLocation: '/splash',
-    refreshListenable: combined,
+    refreshListenable: refreshNotifier,
     redirect: (context, state) async {
       final authState = ref.read(firebaseAuthStateProvider);
 

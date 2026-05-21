@@ -346,7 +346,7 @@ class _BookingConfirmScreenState extends State<BookingConfirmScreen> {
               controller: _notesController,
               maxLines: 3,
               decoration: const InputDecoration(
-                hintText: 'e.g. I have luggage, please call on arrival...',
+                hintText: 'Write Your Note',
                 alignLabelWithHint: true,
               ),
             ),
@@ -452,7 +452,7 @@ class _BookingSuccessView extends StatelessWidget {
                   color: const Color(0xFFF0FDF4),
                   borderRadius: BorderRadius.circular(24),
                 ),
-                child: const Icon(Icons.check_circle_outline, color: AppTheme.success, size: 52),
+                child: const Icon(Icons.check_circle_outline, color: AppTheme.primary, size: 52),
               ),
               const SizedBox(height: 24),
               const Text('Request sent!',
@@ -468,11 +468,6 @@ class _BookingSuccessView extends StatelessWidget {
               ElevatedButton(
                 onPressed: () => context.go('/home'),
                 child: const Text('Back to Home'),
-              ),
-              const SizedBox(height: 12),
-              TextButton(
-                onPressed: () => context.push('/chat/${ride.id}'),
-                child: const Text('Contact', style: TextStyle(color: AppTheme.primary)),
               ),
             ],
           ),

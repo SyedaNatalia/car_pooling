@@ -1355,11 +1355,30 @@ class RideService {
       final seen = <String>{};
       final list = snap.docs
           .map((d) => RideModel.fromMap(d.data() as Map<String, dynamic>, d.id))
-          .where((r) => seen.add(r.id)) // deduplicate
+          .where((r) => seen.add(r.id))
           .toList();
       list.sort((a, b) => b.departureTime.compareTo(a.departureTime));
       return list;
     });
+  }
+
+  /// Real-time stream of the user's single active (pending/accepted) booking.
+  /// Returns null when no active booking exists.
+  Stream<BookingModel?> streamActiveBooking(String passengerId) {
+    return _bookings
+        .where('passengerId', isEqualTo: passengerId)
+        .where('status', whereIn: [
+          AppConstants.bookingPending,
+          AppConstants.bookingAccepted,
+        ])
+        .limit(1)
+        .snapshots()
+        .map((snap) {
+          if (snap.docs.isEmpty) return null;
+          final doc = snap.docs.first;
+          return BookingModel.fromMap(
+              doc.data() as Map<String, dynamic>, doc.id);
+        });
   }
 
   Future<void> updateRideStatus(String rideId, String status) async {

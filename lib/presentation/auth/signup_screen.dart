@@ -1,10 +1,10 @@
 import 'dart:async';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/constants/app_constants.dart';
-import '../../core/router/app_router.dart';
+import '../../data/providers/app_providers.dart';
 import '../../data/services/auth_service.dart';
 
 class SignupScreen extends StatefulWidget {
@@ -538,17 +538,17 @@ class _SignupScreenState extends State<SignupScreen> {
   }
 }
 
-class EmailVerificationWaitScreen extends StatefulWidget {
+class EmailVerificationWaitScreen extends ConsumerStatefulWidget {
   final String email;
   const EmailVerificationWaitScreen({super.key, required this.email});
 
   @override
-  State<EmailVerificationWaitScreen> createState() =>
+  ConsumerState<EmailVerificationWaitScreen> createState() =>
       _EmailVerificationWaitScreenState();
 }
 
 class _EmailVerificationWaitScreenState
-    extends State<EmailVerificationWaitScreen> with WidgetsBindingObserver {
+    extends ConsumerState<EmailVerificationWaitScreen> with WidgetsBindingObserver {
   final _authService = AuthService();
 
   Timer? _pollTimer;
@@ -607,9 +607,11 @@ class _EmailVerificationWaitScreenState
     _pollTimer?.cancel();
 
     try {
-      await _authService.finaliseProfile(); // ✅ create Firestore account
+      await _authService.finaliseProfile();
 
-      RouterRefreshNotifier.instance.refresh();
+      // Trigger GoRouter redirect re-evaluation. authStateChanges does not
+      // fire when emailVerified flips, so we increment this counter manually.
+      ref.read(routerRefreshProvider.notifier).state++;
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -682,7 +684,7 @@ class _EmailVerificationWaitScreenState
     return Scaffold(
       backgroundColor: AppTheme.bgLight,
       body: SafeArea(
-        child: Padding(
+        child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 32),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.center,

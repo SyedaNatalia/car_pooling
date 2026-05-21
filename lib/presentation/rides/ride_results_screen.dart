@@ -1,14 +1,14 @@
-// ignore_for_file: deprecated_member_use
-
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../core/theme/app_theme.dart';
-import '../../presentation/widgets/animated_empty_state.dart';
 import '../../data/services/ride_service.dart';
 import '../../data/models/ride_model.dart';
+import '../shared/widgets/ride_list_card.dart';
+import '../shared/widgets/shimmer_loader.dart';
+import '../shared/widgets/empty_state_view.dart';
 
 class RideResultsScreen extends StatefulWidget {
   final DateTime date;
@@ -187,7 +187,7 @@ class _RideResultsScreenState extends State<RideResultsScreen> with WidgetsBindi
         ],
       ),
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator(color: AppTheme.primary))
+          ? const RideListSkeleton()
           : _errorMessage != null
               ? _ErrorView(message: _errorMessage!, onRetry: _loadRides)
               : RefreshIndicator(
@@ -195,85 +195,112 @@ class _RideResultsScreenState extends State<RideResultsScreen> with WidgetsBindi
                   color: AppTheme.primary,
                   child: Column(
                     children: [
+                      // ── Status bar ─────────────────────────────────────
                       Container(
                         width: double.infinity,
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                        color: AppTheme.primaryLight.withOpacity(0.6),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: AppSpacing.md, vertical: 8),
+                        color: AppTheme.primaryLight,
                         child: Row(
                           children: [
                             Container(
                               width: 7, height: 7,
                               decoration: const BoxDecoration(
-                                  color: AppTheme.success, shape: BoxShape.circle),
+                                  color: AppTheme.success,
+                                  shape: BoxShape.circle),
                             ),
                             const SizedBox(width: 6),
                             Text(
-                              '${_rides.length} ride${_rides.length != 1 ? "s" : ""} • auto-refreshes every 10s',
-                              style: const TextStyle(fontSize: 12, color: AppTheme.textMedium),
+                              '${_rides.length} ride${_rides.length != 1 ? 's' : ''} found',
+                              style: AppTextStyles.caption.copyWith(
+                                  fontWeight: FontWeight.w600),
                             ),
                             const Spacer(),
                             if (_lastUpdated != null)
                               Text(
-                                'Updated ${DateFormat("h:mm:ss a").format(_lastUpdated!)}',
-                                style: const TextStyle(fontSize: 11, color: AppTheme.textLight),
+                                'Updated ${DateFormat("h:mm a").format(_lastUpdated!)}',
+                                style: AppTextStyles.caption,
                               ),
                           ],
                         ),
                       ),
+
                       Expanded(
                         child: _rides.isEmpty && _fullRides.isEmpty
-                            ? _EmptyResults(
-                                date: widget.date,
-                                hasRouteFilter: hasRouteFilter,
-                                fromCity: fromCity,
-                                toCity: toCity,
-                                onRefresh: _refreshRides,
+                            ? EmptyStateView(
+                                icon: Icons.directions_car_outlined,
+                                title: 'No rides found',
+                                subtitle: hasRouteFilter
+                                    ? 'No rides from ${fromCity.isNotEmpty ? fromCity : "your location"} to ${toCity.isNotEmpty ? toCity : "destination"} on this date.'
+                                    : 'No rides available on this date. Try a different date.',
+                                actionLabel: 'Refresh',
+                                onAction: _refreshRides,
                               )
                             : ListView(
-                                padding: const EdgeInsets.all(16),
+                                padding: const EdgeInsets.all(AppSpacing.md),
                                 children: [
-                                  if (_rides.isNotEmpty) ...[
-                                    ...List.generate(_rides.length, (i) => Padding(
-                                      padding: const EdgeInsets.only(bottom: 12),
-                                      child: _RideResultCard(ride: _rides[i]),
-                                    )),
-                                  ] else
-                                    const AnimatedEmptyState(
+                                  // Available rides
+                                  if (_rides.isNotEmpty)
+                                    ...List.generate(
+                                      _rides.length,
+                                      (i) => Padding(
+                                        padding:
+                                            const EdgeInsets.only(bottom: 12),
+                                        child:
+                                            RideListCard(ride: _rides[i]),
+                                      ),
+                                    )
+                                  else
+                                    EmptyStateView(
                                       icon: Icons.search_off_rounded,
                                       title: 'No available rides',
-                                      subtitle: 'All rides on this route are full\nor no rides match your search.',
+                                      subtitle:
+                                          'All rides on this route are full.',
                                     ),
+
+                                  // Full rides section
                                   if (_fullRides.isNotEmpty) ...[
-                                    const SizedBox(height: 8),
+                                    const SizedBox(height: AppSpacing.sm),
                                     Padding(
-                                      padding: const EdgeInsets.only(bottom: 10),
+                                      padding: const EdgeInsets.only(
+                                          bottom: AppSpacing.sm),
                                       child: Row(children: [
                                         Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 10, vertical: 4),
                                           decoration: BoxDecoration(
-                                            color: AppTheme.error.withOpacity(0.08),
-                                            borderRadius: BorderRadius.circular(20),
-                                            border: Border.all(color: AppTheme.error.withOpacity(0.2)),
+                                            color: const Color(0xFFFEF2F2),
+                                            borderRadius: BorderRadius.circular(
+                                                AppRadius.full),
+                                            border: Border.all(
+                                                color: const Color(0xFFFECACA)),
                                           ),
-                                          child: Row(mainAxisSize: MainAxisSize.min, children: [
-                                            Icon(Icons.event_seat, size: 12, color: AppTheme.error.withOpacity(0.8)),
-                                            const SizedBox(width: 5),
-                                            Text(
-                                              'Full rides (${_fullRides.length})',
-                                              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppTheme.error.withOpacity(0.8)),
-                                            ),
-                                          ]),
-                                        ),
-                                        const SizedBox(width: 8),
-                                        const Expanded(
-                                          child: Text('No seats available', style: TextStyle(fontSize: 11, color: AppTheme.textLight)),
+                                          child: const Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Icon(Icons.event_seat_rounded,
+                                                    size: 11,
+                                                    color: AppTheme.error),
+                                                SizedBox(width: 4),
+                                                Text('Fully booked',
+                                                    style: TextStyle(
+                                                        fontSize: 11,
+                                                        fontWeight:
+                                                            FontWeight.w700,
+                                                        color: AppTheme.error)),
+                                              ]),
                                         ),
                                       ]),
                                     ),
-                                    ...List.generate(_fullRides.length, (i) => Padding(
-                                      padding: const EdgeInsets.only(bottom: 12),
-                                      child: _RideResultCard(ride: _fullRides[i], isFull: true),
-                                    )),
+                                    ...List.generate(
+                                      _fullRides.length,
+                                      (i) => Padding(
+                                        padding:
+                                            const EdgeInsets.only(bottom: 12),
+                                        child: RideListCard(
+                                            ride: _fullRides[i], isFull: true),
+                                      ),
+                                    ),
                                   ],
                                 ],
                               ),
@@ -285,6 +312,8 @@ class _RideResultsScreenState extends State<RideResultsScreen> with WidgetsBindi
   }
 }
 
+// Old _RideResultCard removed — replaced by shared RideListCard widget.
+// Keeping _ErrorView below.
 class _RideResultCard extends StatelessWidget {
   final RideModel ride;
   final bool isFull;
@@ -589,95 +618,14 @@ class _ErrorView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 72, height: 72,
-              decoration: BoxDecoration(
-                color: Colors.orange.shade50,
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: Colors.orange.shade200),
-              ),
-              child: Icon(Icons.wifi_off_rounded, color: Colors.orange.shade600, size: 36),
-            ),
-            const SizedBox(height: 16),
-            const Text('Connection Problem',
-                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: AppTheme.textDark)),
-            const SizedBox(height: 10),
-            Text(message,
-                textAlign: TextAlign.center,
-                style: const TextStyle(color: AppTheme.textMedium, height: 1.5, fontSize: 14)),
-            const SizedBox(height: 24),
-            ElevatedButton.icon(
-              onPressed: onRetry,
-              icon: const Icon(Icons.refresh, size: 18),
-              label: const Text('Try Again'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppTheme.primary,
-                foregroundColor: Colors.white,
-                minimumSize: const Size(180, 46),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-            ),
-          ],
-        ),
-      ),
+    return EmptyStateView(
+      icon: Icons.wifi_off_rounded,
+      title: 'Connection Problem',
+      subtitle: message,
+      actionLabel: 'Try Again',
+      onAction: onRetry,
     );
   }
 }
 
-// ── Empty state — route not match ─────────────────────────
-class _EmptyResults extends StatelessWidget {
-  final DateTime date;
-  final bool hasRouteFilter;
-  final String fromCity;
-  final String toCity;
-  final VoidCallback? onRefresh;
-  const _EmptyResults({
-    required this.date,
-    required this.hasRouteFilter,
-    required this.fromCity,
-    required this.toCity,
-    this.onRefresh,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final subtitle = hasRouteFilter
-        ? 'No rides found on this route.\nTry a different date or pull down to refresh.'
-        : 'No rides available on\n${DateFormat("EEEE, MMMM d").format(date)}';
-    return AnimatedEmptyState(
-      icon: Icons.search_off_rounded,
-      title: 'No Rides Found',
-      subtitle: subtitle,
-      action: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          OutlinedButton.icon(
-            onPressed: () => context.pop(),
-            icon: const Icon(Icons.arrow_back, size: 16),
-            label: const Text('Search Again'),
-            style: OutlinedButton.styleFrom(minimumSize: const Size(140, 44)),
-          ),
-          if (onRefresh != null) ...[ 
-            const SizedBox(width: 10),
-            ElevatedButton.icon(
-              onPressed: onRefresh,
-              icon: const Icon(Icons.refresh, size: 16),
-              label: const Text('Refresh'),
-              style: ElevatedButton.styleFrom(
-                minimumSize: const Size(110, 44),
-                backgroundColor: AppTheme.primary,
-                foregroundColor: Colors.white,
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}
+// _EmptyResults removed — replaced by shared EmptyStateView in body.

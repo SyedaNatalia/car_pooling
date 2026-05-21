@@ -66,5 +66,34 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+
+	<!-- Location — required by geolocator & google_maps_flutter -->
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>FairFare needs your location to show your position on the map and auto-fill your address when finding or offering a ride.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>FairFare uses your location to keep tracking your position during an active ride, even when the screen is off.</string>
+	<key>NSLocationAlwaysUsageDescription</key>
+	<string>FairFare uses your location in the background to update your position during an active ride.</string>
+
+	<!-- Camera & Photos — required by image_picker -->
+	<key>NSCameraUsageDescription</key>
+	<string>FairFare needs camera access so you can take a profile photo.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>FairFare needs access to your photo library so you can choose a profile picture.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>FairFare needs permission to save photos to your library.</string>
+
+	<!-- Phone calls — required by url_launcher (tel: scheme) -->
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>tel</string>
+		<string>telprompt</string>
+	</array>
+
+	<!-- Background modes — required by Firebase Messaging for background push -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
+	</array>
 </dict>
 </plist>

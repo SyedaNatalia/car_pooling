@@ -130,6 +130,14 @@ class _BookingCardState extends State<_BookingCard> {
 
   bool get _isExpiredByTime {
     if (_ride == null) return false;
+    // If the ride is already marked expired or cancelled in Firestore, treat
+    // any pending/accepted booking as expired immediately.
+    if (_ride!.status == 'expired' || _ride!.status == 'cancelled') {
+      return widget.booking.status == 'pending' ||
+          widget.booking.status == 'accepted';
+    }
+    // Client-side guard: departure time has passed but autoExpireRides hasn't
+    // updated Firestore yet (fires every minute from HomeScreen).
     final isPastDeparture = DateTime.now().isAfter(_ride!.departureTime);
     final notJoined = widget.booking.status == 'pending' ||
         widget.booking.status == 'cancelled';
@@ -355,7 +363,7 @@ class _BookingCardState extends State<_BookingCard> {
                           final confirm = await showDialog<bool>(
                             context: context,
                             barrierDismissible: false,
-                            builder: (_) => AlertDialog(
+                            builder: (dialogContext) => AlertDialog(
                               shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(16)),
                               title: const Row(
@@ -392,14 +400,14 @@ class _BookingCardState extends State<_BookingCard> {
                               actions: [
                                 TextButton(
                                   onPressed: () =>
-                                      Navigator.pop(context, false),
+                                      Navigator.of(dialogContext).pop(false),
                                   child: const Text('No, Keep It',
                                       style: TextStyle(
                                           color: AppTheme.textMedium)),
                                 ),
                                 ElevatedButton(
                                   onPressed: () =>
-                                      Navigator.pop(context, true),
+                                      Navigator.of(dialogContext).pop(true),
                                   style: ElevatedButton.styleFrom(
                                     backgroundColor: AppTheme.error,
                                     shape: RoundedRectangleBorder(

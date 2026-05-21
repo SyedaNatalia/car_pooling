@@ -142,7 +142,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
             textInputAction: TextInputAction.done,
             onFieldSubmitted: (_) => _sendResetEmail(),
             decoration: const InputDecoration(
-              hintText: 'example@gmail.com',
+              hintText: 'Enter Your Email',
               prefixIcon:
                   Icon(Icons.email_outlined, color: AppTheme.textDark),
             ),
@@ -195,7 +195,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
             borderRadius: BorderRadius.circular(24),
           ),
           child: const Icon(Icons.mark_email_read_outlined,
-              color: AppTheme.success, size: 44),
+              color: AppTheme.primary, size: 44),
         ),
         const SizedBox(height: 24),
         const Text(

@@ -242,7 +242,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                       child: _Field(label: 'Make',
                         child: TextFormField(
                           controller: _carMakeController,
-                          decoration: const InputDecoration(hintText: 'Toyota'),
+                          decoration: const InputDecoration(
+                            hintText: 'Toyota',
+                              hintStyle: TextStyle(color: AppTheme.textLight),),
                         )),
                     ),
                     const SizedBox(width: 12),
@@ -250,7 +252,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                       child: _Field(label: 'Model',
                         child: TextFormField(
                           controller: _carModelController,
-                          decoration: const InputDecoration(hintText: 'Corolla'),
+                          decoration: const InputDecoration(
+                            hintText: 'Corolla',
+                              hintStyle: TextStyle(color: AppTheme.textLight),),
                         )),
                     ),
                   ],
@@ -264,7 +268,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                       child: _Field(label: 'Color',
                         child: TextFormField(
                           controller: _carColorController,
-                          decoration: const InputDecoration(hintText: 'White'),
+                          decoration: const InputDecoration(
+                            hintText: 'White',
+                              hintStyle: TextStyle(color: AppTheme.textLight),),
                         )),
                     ),
                     const SizedBox(width: 12),
@@ -272,7 +278,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                       child: _Field(label: 'Plate Number',
                         child: TextFormField(
                           controller: _carPlateController,
-                          decoration: const InputDecoration(hintText: 'LHR-1234'),
+                          decoration: const InputDecoration(
+                            hintText: 'LHR-1234',
+                              hintStyle: TextStyle(color: AppTheme.textLight),),
                         )),
                     ),
                   ],

@@ -149,10 +149,24 @@ class _RideCard extends StatelessWidget {
   final RideModel ride;
   const _RideCard({required this.ride});
 
+  // A ride is treated as expired client-side if its status is still 'upcoming'
+  // but the departure time has already passed (Firestore update may lag by up
+  // to 1 minute while autoExpireRides() runs on another device).
+  bool get _isExpiredByTime =>
+      ride.status == 'upcoming' && ride.departureTime.isBefore(DateTime.now());
+
+  String get _displayStatus {
+    if (_isExpiredByTime) return 'Expired';
+    final s = ride.status;
+    return s[0].toUpperCase() + s.substring(1);
+  }
+
   Color get _statusColor {
+    if (_isExpiredByTime) return const Color(0xFFF59E0B);
     switch (ride.status) {
       case 'completed': return AppTheme.success;
       case 'cancelled': return AppTheme.error;
+      case 'expired':   return const Color(0xFFF59E0B);
       case 'active':    return AppTheme.primary;
       default:          return AppTheme.warning;
     }
@@ -183,7 +197,7 @@ class _RideCard extends StatelessWidget {
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Text(
-                  ride.status[0].toUpperCase() + ride.status.substring(1),
+                  _displayStatus,
                   style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600,
                       color: _statusColor),
                 ),

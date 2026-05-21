@@ -1,5 +1,51 @@
 import 'package:flutter/material.dart';
 
+// ─── Design Tokens ────────────────────────────────────────────────────────────
+
+class AppSpacing {
+  static const double xs  = 4;
+  static const double sm  = 8;
+  static const double md  = 16;
+  static const double lg  = 24;
+  static const double xl  = 32;
+  static const double xxl = 48;
+}
+
+class AppRadius {
+  static const double sm   = 8;
+  static const double md   = 12;
+  static const double lg   = 16;
+  static const double xl   = 20;
+  static const double xxl  = 24;
+  static const double full = 100;
+}
+
+class AppTextStyles {
+  static const TextStyle h1 = TextStyle(fontSize: 26, fontWeight: FontWeight.w700, color: AppTheme.textDark, height: 1.2);
+  static const TextStyle h2 = TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: AppTheme.textDark, height: 1.3);
+  static const TextStyle h3 = TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: AppTheme.textDark, height: 1.3);
+  static const TextStyle h4 = TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppTheme.textDark, height: 1.4);
+  static const TextStyle body = TextStyle(fontSize: 14, fontWeight: FontWeight.w400, color: AppTheme.textMedium, height: 1.5);
+  static const TextStyle bodyBold = TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppTheme.textDark, height: 1.5);
+  static const TextStyle caption = TextStyle(fontSize: 12, fontWeight: FontWeight.w400, color: AppTheme.textMedium, height: 1.4);
+  static const TextStyle label = TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppTheme.textLight, letterSpacing: 0.4);
+}
+
+// ─── Shadow Tokens ────────────────────────────────────────────────────────────
+
+class AppShadows {
+  static const List<BoxShadow> card = [
+    BoxShadow(color: Color(0x0A000000), blurRadius: 8, offset: Offset(0, 2)),
+    BoxShadow(color: Color(0x06000000), blurRadius: 16, offset: Offset(0, 4)),
+  ];
+  static const List<BoxShadow> elevated = [
+    BoxShadow(color: Color(0x14000000), blurRadius: 20, offset: Offset(0, 6)),
+  ];
+  static List<BoxShadow> primary = [
+    BoxShadow(color: const Color(0xFF270d7d).withValues(alpha: 0.28), blurRadius: 16, offset: const Offset(0, 6)),
+  ];
+}
+
 class AppTheme {
   // ── Navy Blue palette ──────────────────────────────────────
   static const Color primary      = Color(0xFF270d7d); 
@@ -103,11 +149,15 @@ class AppTheme {
       ),
 
       bottomNavigationBarTheme: const BottomNavigationBarThemeData(
-        backgroundColor: bgWhite,     
-        selectedItemColor: primary, 
+        backgroundColor: bgWhite,
+        selectedItemColor: primary,
         unselectedItemColor: textLight,
         type: BottomNavigationBarType.fixed,
-        elevation: 8,
+        elevation: 0,
+        showSelectedLabels: true,
+        showUnselectedLabels: true,
+        selectedLabelStyle: TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
+        unselectedLabelStyle: TextStyle(fontSize: 11, fontWeight: FontWeight.w400),
       ),
 
       snackBarTheme: SnackBarThemeData(

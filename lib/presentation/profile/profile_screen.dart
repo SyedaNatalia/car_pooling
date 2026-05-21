@@ -1,35 +1,43 @@
 // ignore_for_file: deprecated_member_use
 
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/theme/app_theme.dart';
-import '../../data/services/auth_service.dart';
+import '../../data/providers/app_providers.dart';
 import '../../data/models/user_model.dart';
 
-class ProfileScreen extends StatefulWidget {
+class ProfileScreen extends ConsumerWidget {
   const ProfileScreen({super.key});
+
   @override
-  State<ProfileScreen> createState() => _ProfileScreenState();
+  Widget build(BuildContext context, WidgetRef ref) {
+    final userAsync = ref.watch(currentUserProvider);
+    return userAsync.when(
+      loading: () => const Scaffold(
+        body: Center(child: CircularProgressIndicator(color: AppTheme.primary)),
+      ),
+      error: (_, __) => const Scaffold(
+        body: Center(child: Text('Failed to load profile')),
+      ),
+      data: (user) {
+        if (user == null) {
+          return const Scaffold(
+            body: Center(child: Text('Failed to load profile')),
+          );
+        }
+        return _ProfileBody(user: user, ref: ref);
+      },
+    );
+  }
 }
 
-class _ProfileScreenState extends State<ProfileScreen> {
-  UserModel? _user;
-  bool _isLoading = true;
+class _ProfileBody extends StatelessWidget {
+  final UserModel user;
+  final WidgetRef ref;
+  const _ProfileBody({required this.user, required this.ref});
 
-  @override
-  void initState() {
-    super.initState();
-    _loadProfile();
-  }
-
-  Future<void> _loadProfile() async {
-    final user = await AuthService().getCurrentUserProfile();
-    if (mounted) setState(() { _user = user; _isLoading = false; });
-  }
-
-  Future<void> _logout() async {
+  Future<void> _logout(BuildContext context) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -52,24 +60,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
       ),
     );
     if (confirmed == true) {
-      await AuthService().signOut();
-      if (mounted) context.go('/auth/login');
+      await ref.read(authServiceProvider).signOut();
+      if (context.mounted) context.go('/auth/login');
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) {
-      return const Scaffold(
-          body: Center(
-              child: CircularProgressIndicator(color: AppTheme.primary)));
-    }
-    final user = _user;
-    if (user == null) {
-      return const Scaffold(
-          body: Center(child: Text('Failed to load profile')));
-    }
-
     return Scaffold(
       backgroundColor: AppTheme.bgLight,
       body: CustomScrollView(
@@ -137,34 +134,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   child: Text(user.department,
                       style: const TextStyle(
                           color: Colors.white, fontSize: 12)),
-                ),
-                const SizedBox(height: 20),
-
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    _StatItem(
-                        value: user.totalRides.toString(),
-                        label: 'Total rides'),
-                    Container(
-                        width: 1, height: 40,
-                        color: Colors.white.withOpacity(0.3)),
-                    _StatItem(
-                      value: user.rating > 0
-                          ? user.rating.toStringAsFixed(1) : 'New',
-                      label: 'Rating',
-                      icon: user.rating > 0 ? Icons.star : null,
-                    ),
-                    Container(
-                        width: 1, height: 40,
-                        color: Colors.white.withOpacity(0.3)),
-                    _StatItem(
-                      value: user.role == 'both'
-                          ? 'Driver & Rider'
-                          : user.role == 'driver' ? 'Driver' : 'Rider',
-                      label: 'Role',
-                    ),
-                  ],
                 ),
               ]),
             ),
@@ -256,7 +225,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     _MenuItem(
                       icon: Icons.logout,
                       label: 'Sign out',
-                      onTap: _logout,
+                      onTap: () => _logout(context),
                       color: AppTheme.error,
                     ),
                   ],

@@ -1,5 +1,3 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -7,7 +5,6 @@ import 'package:intl/intl.dart';
 import '../../core/theme/app_theme.dart';
 import '../../data/models/ride_model.dart';
 import '../../data/providers/app_providers.dart';
-import '../../data/services/ride_service.dart';
 
 class MainShell extends ConsumerStatefulWidget {
   final Widget child;
@@ -18,111 +15,45 @@ class MainShell extends ConsumerStatefulWidget {
 }
 
 class _MainShellState extends ConsumerState<MainShell> {
-  final _rideService = RideService();
-  bool _hasActiveRide    = false; 
-  bool _hasActiveBooking = false; 
-  RideModel? _activeBookedRide;  
-
-  GoRouter? _router;
-  bool _listenerAttached = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _checkActiveStatus();
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (!_listenerAttached) {
-      _router = GoRouter.of(context);
-      _router!.routerDelegate.addListener(_onRouteChange);
-      _listenerAttached = true;
-    }
-  }
-
-  void _onRouteChange() {
-    _checkActiveStatus();
-  }
-
-  @override
-  void dispose() {
-    _router?.routerDelegate.removeListener(_onRouteChange);
-    super.dispose();
-  }
-
-  Future<void> _checkActiveStatus() async {
-    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
-    if (uid.isEmpty) return;
-    try {
-      final hasRide    = await _rideService.hasActiveRide(uid);
-      final hasBooking = await _rideService.hasActivePendingBooking(uid);
-      if (mounted) {
-        setState(() {
-        _hasActiveRide    = hasRide;
-        _hasActiveBooking = hasBooking;
-      });
-      }
-
-      if (hasBooking) {
-        final snap = await FirebaseFirestore.instance
-            .collection('bookings')
-            .where('passengerId', isEqualTo: uid)
-            .where('status', whereIn: ['pending', 'accepted'])
-            .limit(1)
-            .get();
-        if (snap.docs.isNotEmpty) {
-          final rideId = snap.docs.first.data()['rideId'] as String? ?? '';
-          if (rideId.isNotEmpty) {
-            final ride = await _rideService.getRideById(rideId);
-            if (mounted) setState(() => _activeBookedRide = ride);
-          }
-        }
-      } else {
-        if (mounted) setState(() => _activeBookedRide = null);
-      }
-    } catch (_) {}
-  }
-
   void _showNotice(BuildContext context, {required bool isDriver}) {
+    // Read snapshot — the modal content does not need to be reactive.
+    final activeBookedRide =
+        isDriver ? null : ref.read(activeBookedRideProvider).valueOrNull;
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
       builder: (_) => _ActiveRideNoticeSheet(
         isDriver: isDriver,
-        activeBookedRide: isDriver ? null : _activeBookedRide,
+        activeBookedRide: activeBookedRide,
       ),
-    ).then((_) => _checkActiveStatus()); 
+    );
+    // No manual status re-check needed — providers update automatically.
   }
 
   @override
   Widget build(BuildContext context) {
-    final location  = GoRouterState.of(context).matchedLocation;
-    final userAsync = ref.watch(currentUserProvider);
-    final user      = userAsync.valueOrNull;
-
-    // Driver = car details
-    final isDriver = user != null &&
-        user.carDetails != null &&
-        user.carDetails!.plateNumber.isNotEmpty;
+    final location = GoRouterState.of(context).matchedLocation;
+    // Reactive role restriction flags — no Firestore queries, no setState.
+    final hasActiveRide = ref.watch(hasActiveRideProvider);
+    final hasActiveBooking = ref.watch(hasActiveBookingProvider);
 
     const routes = ['/home', '/find-ride', '/offer-ride', '/profile'];
 
     int currentNavIndex = 0;
     for (int i = 0; i < routes.length; i++) {
-      if (location.startsWith(routes[i])) { currentNavIndex = i; break; }
+      if (location.startsWith(routes[i])) {
+        currentNavIndex = i;
+        break;
+      }
     }
 
     void onTap(int i) {
-      // Find Ride block for driver
-      if (i == 1 && _hasActiveRide) {
+      if (i == 1 && hasActiveRide) {
         _showNotice(context, isDriver: true);
         return;
       }
-      // Offer Ride block for rider
-      if (i == 2 && _hasActiveBooking) {
+      if (i == 2 && hasActiveBooking) {
         _showNotice(context, isDriver: false);
         return;
       }
@@ -132,34 +63,41 @@ class _MainShellState extends ConsumerState<MainShell> {
     return Scaffold(
       body: widget.child,
       bottomNavigationBar: Container(
-        decoration: const BoxDecoration(
-          border: Border(top: BorderSide(color: AppTheme.border)),
+        decoration: BoxDecoration(
+          color: AppTheme.bgWhite,
+          border: const Border(top: BorderSide(color: AppTheme.border, width: 0.8)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.06),
+              blurRadius: 12,
+              offset: const Offset(0, -2),
+            ),
+          ],
         ),
         child: BottomNavigationBar(
           currentIndex: currentNavIndex,
           onTap: onTap,
+          elevation: 0,
+          backgroundColor: Colors.transparent,
           items: [
             const BottomNavigationBarItem(
               icon: Icon(Icons.home_outlined),
               activeIcon: Icon(Icons.home_rounded),
               label: 'Home',
             ),
-
             const BottomNavigationBarItem(
               icon: Icon(Icons.search_outlined),
               activeIcon: Icon(Icons.search_rounded),
               label: 'Find Ride',
             ),
-
             const BottomNavigationBarItem(
-              icon: Icon(Icons.add_circle_outline),
-              activeIcon: Icon(Icons.add_circle),
+              icon: Icon(Icons.add_circle_outline_rounded),
+              activeIcon: Icon(Icons.add_circle_rounded),
               label: 'Offer Ride',
             ),
-
             BottomNavigationBarItem(
               icon: _NotifBadgeIcon(
-                icon: Icons.person_outline,
+                icon: Icons.person_outline_rounded,
                 activeIcon: Icons.person_rounded,
                 isActive: currentNavIndex == 3,
               ),
@@ -542,9 +480,9 @@ class _StepItem {
   });
 }
 
-// ── Notification badge on profile icon ───────────────────────────────────────
+// ── Notification badge on profile icon — uses shared provider ─────────────────
 
-class _NotifBadgeIcon extends StatelessWidget {
+class _NotifBadgeIcon extends ConsumerWidget {
   final IconData icon;
   final IconData activeIcon;
   final bool isActive;
@@ -556,47 +494,37 @@ class _NotifBadgeIcon extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
-    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
-    return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('notifications')
-          .where('userId', isEqualTo: uid)
-          .where('isRead', isEqualTo: false)
-          .snapshots(),
-      builder: (context, snap) {
-        final count = snap.data?.docs.length ?? 0;
-        return Stack(
-          clipBehavior: Clip.none,
-          children: [
-            Icon(isActive ? activeIcon : icon),
-            if (count > 0)
-              Positioned(
-                top: -4, right: -6,
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 300),
-                  curve: Curves.elasticOut,
-                  width: count > 9 ? 18 : 14,
-                  height: 14,
-                  decoration: const BoxDecoration(
-                    color: AppTheme.error,
-                    shape: BoxShape.circle,
-                  ),
-                  child: Center(
-                    child: Text(
-                      count > 9 ? '9+' : '$count',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 8,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
+  Widget build(BuildContext context, WidgetRef ref) {
+    final count = ref.watch(unreadNotifCountProvider).valueOrNull ?? 0;
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Icon(isActive ? activeIcon : icon),
+        if (count > 0)
+          Positioned(
+            top: -4, right: -6,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.elasticOut,
+              width: count > 9 ? 18 : 14,
+              height: 14,
+              decoration: const BoxDecoration(
+                color: AppTheme.error,
+                shape: BoxShape.circle,
+              ),
+              child: Center(
+                child: Text(
+                  count > 9 ? '9+' : '$count',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 8,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
               ),
-          ],
-        );
-      },
+            ),
+          ),
+      ],
     );
   }
 }

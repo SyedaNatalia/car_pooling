@@ -386,46 +386,9 @@ class _ActiveRideScreenState extends State<ActiveRideScreen> {
           icon: const Icon(Icons.arrow_back_ios_new, size: 18),
           onPressed: () => context.pop(),
         ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.chat_bubble_outline),
-            onPressed: () => context.push('/chat/${ride.id}'),
-          ),
-        ],
       ),
       body: Column(
         children: [
-          AnimatedContainer(
-            duration: const Duration(milliseconds: 300),
-            width: double.infinity,
-            padding:
-                const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-            color: _rideStarted ? AppTheme.success : AppTheme.warning,
-            child: Row(
-              children: [
-                Icon(
-                  _rideStarted
-                      ? Icons.radio_button_checked
-                      : Icons.pending_outlined,
-                  color: Colors.white,
-                  size: 18,
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    _rideStarted
-                        ? 'Ride is live — passengers have been notified'
-                        : 'Ready to start? Press the button below',
-                    style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w500,
-                        fontSize: 13),
-                  ),
-                ),
-              ],
-            ),
-          ),
-
           Expanded(
             child: Stack(
               children: [
@@ -523,7 +486,7 @@ class _ActiveRideScreenState extends State<ActiveRideScreen> {
                   : ElevatedButton(
                       onPressed: _startRide,
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: AppTheme.success,
+                        backgroundColor: AppTheme.primary,
                         shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(14)),
                       ),

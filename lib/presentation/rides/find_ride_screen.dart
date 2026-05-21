@@ -2,30 +2,29 @@ import 'dart:async';
 import 'dart:math';
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:http/http.dart' as http;
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/snack_helper.dart';
-import '../../data/services/ride_service.dart';
+import '../../data/providers/app_providers.dart';
 
 import '../../core/constants/env_config.dart';
 
 String get _kGoogleApiKey => EnvConfig.googleMapsApiKey;
 
 
-class FindRideScreen extends StatefulWidget {
+class FindRideScreen extends ConsumerStatefulWidget {
   const FindRideScreen({super.key});
   @override
-  State<FindRideScreen> createState() => _FindRideScreenState();
+  ConsumerState<FindRideScreen> createState() => _FindRideScreenState();
 }
 
-class _FindRideScreenState extends State<FindRideScreen> {
+class _FindRideScreenState extends ConsumerState<FindRideScreen> {
   // ── Controllers & Focus ───────────────────────────────────────────
   final _fromController = TextEditingController();
   final _toController   = TextEditingController();
@@ -55,57 +54,33 @@ class _FindRideScreenState extends State<FindRideScreen> {
   Timer?  _debounce;
   String  _lastQuery = '';
 
-  // ── Active booking state ──────────────────────────────────────────
-  String? _activeBookingId;
-  String? _activeBookingStatus;
-  String? _activeBookingRideId;        
-  bool _checkingActiveBooking = false;
+  // Active booking is now read from activeBookingProvider — no local state.
 
   @override
   void initState() {
     super.initState();
     _getCurrentLocation();
-    _loadActiveBooking();
-    _checkNotDriver();
-  }
-
-  Future<void> _checkNotDriver() async {
-  }
-
-  Future<void> _loadActiveBooking() async {
-    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
-    if (uid.isEmpty) return;
-    try {
-      final snap = await FirebaseFirestore.instance
-          .collection('bookings')
-          .where('passengerId', isEqualTo: uid)
-          .where('status', whereIn: ['pending', 'accepted'])
-          .limit(1)
-          .get();
-      if (mounted && snap.docs.isNotEmpty) {
-        final doc = snap.docs.first;
-        setState(() {
-          _activeBookingId = doc.id;
-          _activeBookingStatus = doc.data()['status'] as String?;
-          _activeBookingRideId = doc.data()['rideId'] as String?;
-        });
-      } else if (mounted) {
-        setState(() { _activeBookingId = null; _activeBookingStatus = null; _activeBookingRideId = null; });
-      }
-    } catch (_) {}
   }
 
   Future<void> _cancelActiveBooking() async {
-    if (_activeBookingId == null) return;
+    final booking = ref.read(activeBookingProvider).valueOrNull;
+    if (booking == null) return;
+
+    // Use a local navigator key to avoid the !_debugLocked assertion that
+    // occurs when Navigator.pop is called with an outer context captured by
+    // closure inside builder: (_).  Passing the dialog's own context ensures
+    // the pop targets the dialog route, not the host navigator.
     final confirm = await showDialog<bool>(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: const Text('Cancel Booking?'),
         content: const Text('Are you sure you want to cancel your active booking?'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('No')),
+          TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('No')),
           ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
             child: const Text('Yes, Cancel'),
           ),
@@ -114,18 +89,19 @@ class _FindRideScreenState extends State<FindRideScreen> {
     );
     if (confirm != true || !mounted) return;
     try {
-      await RideService().cancelBooking(_activeBookingId!);
-      if (mounted) {
-        setState(() { _activeBookingId = null; _activeBookingStatus = null; _activeBookingRideId = null; });
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Booking cancelled'), backgroundColor: Colors.green),
-        );
-      }
+      await ref.read(rideServiceProvider).cancelBooking(booking.id);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text('Booking cancelled'),
+            backgroundColor: Colors.green),
+      );
+      // activeBookingProvider and activeBookedRideProvider update automatically
+      // via their Firestore streams — no setState needed here.
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
-      );
+            SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red));
       }
     }
   }
@@ -505,7 +481,10 @@ class _FindRideScreenState extends State<FindRideScreen> {
     final hasRoute = _pickupLatLng != null && _dropoffLatLng != null;
     final dist     = _effectiveDistanceKm();
 
-    if (_activeBookingId != null) {
+    // Watch active booking from the shared provider — reactive, no Firestore query.
+    final activeBooking = ref.watch(activeBookingProvider).valueOrNull;
+
+    if (activeBooking != null) {
       return Scaffold(
         backgroundColor: AppTheme.bgLight,
         appBar: AppBar(
@@ -540,7 +519,7 @@ class _FindRideScreenState extends State<FindRideScreen> {
                 ),
                 const SizedBox(height: 10),
                 Text(
-                  'Your booking is ${_activeBookingStatus == 'accepted' ? 'confirmed ✓' : 'pending approval'}. Cancel it first to search for a new ride.',
+                  'Your booking is ${activeBooking.status == 'accepted' ? 'confirmed ✓' : 'pending approval'}. Cancel it first to search for a new ride.',
                   textAlign: TextAlign.center,
                   style: const TextStyle(
                       fontSize: 14,
@@ -548,13 +527,12 @@ class _FindRideScreenState extends State<FindRideScreen> {
                       height: 1.5),
                 ),
                 const SizedBox(height: 28),
-                if (_activeBookingRideId != null)
-                  SizedBox(
+                SizedBox(
                     width: double.infinity,
                     height: 50,
                     child: ElevatedButton.icon(
                       onPressed: () =>
-                          context.push('/ride/$_activeBookingRideId'),
+                          context.push('/ride/${activeBooking.rideId}'),
                       icon: const Icon(Icons.visibility_outlined, size: 18),
                       label: const Text('View Your Ride',
                           style: TextStyle(fontSize: 15)),
@@ -680,7 +658,7 @@ class _FindRideScreenState extends State<FindRideScreen> {
                             focusNode: _fromFocus,
                             hint: 'Pickup location',
                             icon: Icons.radio_button_checked,
-                            iconColor: AppTheme.success,
+                            iconColor: AppTheme.primary,
                             trailing: _isLoadingLocation
                                 ? const SizedBox(width: 18, height: 18,
                                     child: CircularProgressIndicator(strokeWidth: 2))
@@ -738,7 +716,7 @@ class _FindRideScreenState extends State<FindRideScreen> {
                             focusNode: _toFocus,
                             hint: 'Where to?',
                             icon: Icons.location_on,
-                            iconColor: AppTheme.error,
+                            iconColor: AppTheme.primary,
                             onChanged: _onToChanged,
                           ),
 
@@ -968,26 +946,25 @@ class _LocationField extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       child: Row(children: [
-        Icon(icon, color: iconColor, size: 20),
-        const SizedBox(width: 14),
-        Expanded(
-          child: TextField(
-            controller: controller,
-            focusNode: focusNode,
-            onChanged: onChanged,
-            style: const TextStyle(
-                fontSize: 16, color: AppTheme.textDark, fontWeight: FontWeight.w500),
-            decoration: InputDecoration(
-              hintText: hint,
-              hintStyle: const TextStyle(color: AppTheme.textLight, fontSize: 16),
-              border: InputBorder.none,
-              isDense: true,
-              contentPadding: EdgeInsets.zero,
-            ),
-          ),
-        ),
-        if (trailing != null) trailing!,
-      ]),
+  Expanded(
+    child: TextField(
+      controller: controller,
+      focusNode: focusNode,
+      onChanged: onChanged,
+      style: const TextStyle(
+          fontSize: 16, color: AppTheme.textDark, fontWeight: FontWeight.w500),
+      decoration: InputDecoration(
+        hintText: hint,
+        hintStyle: const TextStyle(color: AppTheme.textLight, fontSize: 16),
+        prefixIcon: Icon(icon, color: iconColor, size: 20),
+        suffixIcon: trailing,
+        border: InputBorder.none,
+        isDense: true,
+        contentPadding: const EdgeInsets.symmetric(vertical: 12),
+      ),
+    ),
+  ),
+]),
     );
   }
 }
