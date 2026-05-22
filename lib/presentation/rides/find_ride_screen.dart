@@ -483,8 +483,11 @@ class _FindRideScreenState extends ConsumerState<FindRideScreen> {
 
     // Watch active booking from the shared provider — reactive, no Firestore query.
     final activeBooking = ref.watch(activeBookingProvider).valueOrNull;
+    // Use hasActiveBookingProvider so a completed/cancelled/expired ride
+    // releases this gate even if the booking status hasn't updated yet.
+    final hasActiveBooking = ref.watch(hasActiveBookingProvider);
 
-    if (activeBooking != null) {
+    if (hasActiveBooking) {
       return Scaffold(
         backgroundColor: AppTheme.bgLight,
         appBar: AppBar(
@@ -519,7 +522,7 @@ class _FindRideScreenState extends ConsumerState<FindRideScreen> {
                 ),
                 const SizedBox(height: 10),
                 Text(
-                  'Your booking is ${activeBooking.status == 'accepted' ? 'confirmed ✓' : 'pending approval'}. Cancel it first to search for a new ride.',
+                  'Your booking is ${activeBooking?.status == 'accepted' ? 'confirmed ✓' : 'pending approval'}. Cancel it first to search for a new ride.',
                   textAlign: TextAlign.center,
                   style: const TextStyle(
                       fontSize: 14,
@@ -531,8 +534,9 @@ class _FindRideScreenState extends ConsumerState<FindRideScreen> {
                     width: double.infinity,
                     height: 50,
                     child: ElevatedButton.icon(
-                      onPressed: () =>
-                          context.push('/ride/${activeBooking.rideId}'),
+                      onPressed: activeBooking == null
+                          ? null
+                          : () => context.push('/ride/${activeBooking.rideId}'),
                       icon: const Icon(Icons.visibility_outlined, size: 18),
                       label: const Text('View Your Ride',
                           style: TextStyle(fontSize: 15)),

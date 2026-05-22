@@ -161,14 +161,20 @@ class _DriverRideCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bookedSeats = ride.totalSeats - ride.availableSeats;
+    final isFinished = ride.status == 'completed' ||
+        ride.status == 'cancelled' ||
+        ride.status == 'expired';
+
     return GestureDetector(
-      onTap: () {
-        if (ride.status == 'active') {
-          context.push('/ride/${ride.id}/active');
-        } else {
-          context.push('/ride/${ride.id}/requests');
-        }
-      },
+      onTap: isFinished
+          ? null
+          : () {
+              if (ride.status == 'active') {
+                context.push('/ride/${ride.id}/active');
+              } else {
+                context.push('/ride/${ride.id}/requests');
+              }
+            },
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(

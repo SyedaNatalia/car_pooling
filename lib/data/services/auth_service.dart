@@ -251,7 +251,9 @@ class AuthService {
   }
 
   // ── Pending profile store ─────────────────────────────────────────────────
-  _PendingProfile? _pendingProfile;
+  // Static so the data survives across AuthService() instantiations
+  // (signUp() and finaliseProfile() are called on different instances).
+  static _PendingProfile? _pendingProfile;
 
   // ── Error Handler ─────────────────────────────────────────────────────────
   String _handleAuthError(FirebaseAuthException e) {

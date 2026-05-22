@@ -147,6 +147,7 @@ class _ManageRequestsScreenState extends State<ManageRequestsScreen> {
     try {
       await _rideService.updateBookingStatus(bookingId, 'accepted');
       _showSnack('Request accepted ✓', AppTheme.success);
+      await _loadRide();
     } catch (e) {
       showErrorSnack(context, e);
     }
@@ -251,7 +252,7 @@ body: SingleChildScrollView(
                     const Text('Your Ride', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppTheme.textDark)),
                     const Spacer(),
                     GestureDetector(
-                      onTap: DateTime.now().isAfter(_ride!.departureTime)
+                      onTap: (DateTime.now().isAfter(_ride!.departureTime) || _ride!.passengerIds.isNotEmpty)
                           ? null
                           : () => setState(() {
                               _editingSeats = !_editingSeats;
@@ -351,7 +352,7 @@ body: SingleChildScrollView(
                       ),
                       const Spacer(),
                       GestureDetector(
-                        onTap: DateTime.now().isAfter(_ride!.departureTime)
+                        onTap: (DateTime.now().isAfter(_ride!.departureTime) || _ride!.passengerIds.isNotEmpty)
                             ? null
                             : () => setState(() {
                                 _editingPrice = true;
@@ -392,7 +393,7 @@ body: SingleChildScrollView(
                         style: TextStyle(fontSize: 12, color: _ride!.notes?.isNotEmpty == true ? AppTheme.textMedium : AppTheme.textLight),
                       )),
                       GestureDetector(
-                        onTap: DateTime.now().isAfter(_ride!.departureTime)
+                        onTap: (DateTime.now().isAfter(_ride!.departureTime) || _ride!.passengerIds.isNotEmpty)
                             ? null
                             : () => setState(() { _editingNotes = true; _notesController.text = _ride!.notes ?? ''; }),
                         child: Container(

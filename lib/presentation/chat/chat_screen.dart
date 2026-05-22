@@ -23,7 +23,8 @@ class _ChatScreenState extends State<ChatScreen> {
   final _rideService     = RideService();
 
   RideModel? _ride;
-  String? _passengerPhone; 
+  String? _passengerPhone;
+  String? _driverPhone;
   bool _sending = false;
 
   String get _myUid   => FirebaseAuth.instance.currentUser?.uid   ?? '';
@@ -65,17 +66,30 @@ class _ChatScreenState extends State<ChatScreen> {
     }
     setState(() => _ride = ride);
 
-    if (ride != null && ride.driverId == _myUid && ride.passengerIds.isNotEmpty) {
-      try {
-        final passengerUid = ride.passengerIds.first;
-        final doc = await FirebaseFirestore.instance
-            .collection('users')
-            .doc(passengerUid)
-            .get();
-        if (mounted && doc.exists) {
-          setState(() => _passengerPhone = doc.data()?['phone'] as String?);
-        }
-      } catch (_) {}
+    if (ride != null) {
+      if (ride.driverId == _myUid && ride.passengerIds.isNotEmpty) {
+        // Driver: fetch first passenger's phone
+        try {
+          final doc = await FirebaseFirestore.instance
+              .collection('users')
+              .doc(ride.passengerIds.first)
+              .get();
+          if (mounted && doc.exists) {
+            setState(() => _passengerPhone = doc.data()?['phone'] as String?);
+          }
+        } catch (_) {}
+      } else if (ride.driverId != _myUid) {
+        // Passenger: fetch driver's phone from users collection
+        try {
+          final doc = await FirebaseFirestore.instance
+              .collection('users')
+              .doc(ride.driverId)
+              .get();
+          if (mounted && doc.exists) {
+            setState(() => _driverPhone = doc.data()?['phone'] as String?);
+          }
+        } catch (_) {}
+      }
     }
   }
 
@@ -91,6 +105,12 @@ class _ChatScreenState extends State<ChatScreen> {
         senderName:  _myName,
         senderPhoto: _myPhoto.isNotEmpty ? _myPhoto : null,
         text:        text,
+      );
+      _rideService.notifyMessage(
+        rideId:     widget.rideId,
+        senderId:   _myUid,
+        senderName: _myName,
+        message:    text,
       );
       _scrollToBottom();
     } catch (e) {
@@ -117,7 +137,7 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _callContact() async {
-    final phone = _isDriver ? _passengerPhone : _ride?.driverPhone;
+    final phone = _isDriver ? _passengerPhone : (_driverPhone ?? _ride?.driverPhone);
     if (phone == null || phone.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -130,14 +150,16 @@ class _ChatScreenState extends State<ChatScreen> {
       );
       return;
     }
-    final uri = Uri(scheme: 'tel', path: phone);
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri);
-    } else {
+    // Strip everything except digits and leading +
+    final cleaned = phone.replaceAll(RegExp(r'[^\d+]'), '');
+    final uri = Uri(scheme: 'tel', path: cleaned);
+    try {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Cannot make call from this device'),
+            content: Text('Could not open dialer. Please dial manually.'),
             backgroundColor: AppTheme.error,
             behavior: SnackBarBehavior.floating,
           ),
