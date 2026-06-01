@@ -150,17 +150,20 @@ class _ProfileBody extends StatelessWidget {
                   items: [
                     _MenuItem(
                       icon: Icons.history,
+                      iconColor: AppTheme.primary,
                       label: 'Ride history',
                       onTap: () => context.push('/ride-history'),
                     ),
                     _MenuItem(
                       icon: Icons.bookmark_border,
+                      iconColor: AppTheme.primary,
                       label: 'My bookings',
                       onTap: () => context.push('/my-bookings'),
                     ),
                     if (user.role != 'passenger')
                       _MenuItem(
                         icon: Icons.drive_eta,
+                        iconColor: AppTheme.primary,
                         label: 'My rides (as driver)',
                         onTap: () => context.push('/my-rides'),
                       ),
@@ -174,18 +177,21 @@ class _ProfileBody extends StatelessWidget {
                   items: [
                     _MenuItem(
                       icon: Icons.person_outline,
+                      iconColor: AppTheme.primary,
                       label: 'Edit profile',
                       onTap: () => context.push('/edit-profile'),
                     ),
 
                     _MenuItem(
                       icon: Icons.directions_car_outlined,
+                      iconColor: AppTheme.primary,
                       label: 'Edit car details',
                       onTap: () => context.push('/edit-car-details'),
                     ),
 
                     _MenuItem(
                       icon: Icons.notifications_outlined,
+                      iconColor: AppTheme.primary,
                       label: 'Notifications',
                       onTap: () => context.push('/notifications'),
                     ),
@@ -200,6 +206,7 @@ class _ProfileBody extends StatelessWidget {
                     items: [
                       _MenuItem(
                         icon: Icons.admin_panel_settings_outlined,
+                        iconColor: AppTheme.primary,
                         label: 'Admin Dashboard',
                         onTap: () => context.push('/admin'),
                         color: AppTheme.primary,
@@ -214,16 +221,19 @@ class _ProfileBody extends StatelessWidget {
                   items: [
                     _MenuItem(
                       icon: Icons.help_outline,
+                      iconColor: AppTheme.primary,
                       label: 'Help & Support',
                       onTap: () => context.push('/help'),
                     ),
                     _MenuItem(
                       icon: Icons.info_outline,
+                      iconColor: AppTheme.primary,
                       label: 'About',
                       onTap: () => context.push('/about'),
                     ),
                     _MenuItem(
                       icon: Icons.logout,
+                      iconColor: AppTheme.primary,
                       label: 'Sign out',
                       onTap: () => _logout(context),
                       color: AppTheme.error,
@@ -318,12 +328,14 @@ class _MenuItem extends StatelessWidget {
   final VoidCallback? onTap;
   final Color? color;
   final Widget? trailing;
+  final Color? iconColor;
   const _MenuItem({
     required this.icon,
     required this.label,
     this.onTap,
     this.color,
     this.trailing,
+    this.iconColor,
   });
 
   @override
@@ -332,7 +344,7 @@ class _MenuItem extends StatelessWidget {
       contentPadding:
           const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
       leading: Icon(icon,
-          color: color ?? AppTheme.textMedium, size: 22),
+          color: iconColor, size: 22),
       title: Text(label,
           style: TextStyle(
               fontSize: 14, fontWeight: FontWeight.w500,

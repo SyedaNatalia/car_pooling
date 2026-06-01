@@ -181,13 +181,7 @@ class _HelpScreenState extends State<HelpScreen> {
                 icon: Icons.email_outlined,
                 label: 'Email Support',
                 subtitle: 'support@yourapp.com',
-                onTap: () {},
-              ),
-              const Divider(height: 1, indent: 56, color: AppTheme.border),
-              _ContactTile(
-                icon: Icons.chat_bubble_outline,
-                label: 'Live Chat',
-                subtitle: 'Available 9am – 6pm',
+                iconColor: AppTheme.primary,
                 onTap: () {},
               ),
             ]),
@@ -211,9 +205,10 @@ class _ContactTile extends StatelessWidget {
   final String label;
   final String subtitle;
   final VoidCallback onTap;
+  final Color? iconColor;
   const _ContactTile({
     required this.icon, required this.label,
-    required this.subtitle, required this.onTap,
+    required this.subtitle, required this.onTap, required this.iconColor,
   });
 
   @override
@@ -227,7 +222,7 @@ class _ContactTile extends StatelessWidget {
           color: AppTheme.bgLight,
           borderRadius: BorderRadius.circular(10),
         ),
-        child: Icon(icon, size: 20, color: AppTheme.textMedium),
+        child: Icon(icon, color: iconColor),
       ),
       title: Text(label,
           style: const TextStyle(
