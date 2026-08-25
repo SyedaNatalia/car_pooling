@@ -227,148 +227,152 @@ class _DriverRideCard extends StatelessWidget {
             Row(children: [
               const Icon(Icons.directions_car_outlined, size: 16, color: AppTheme.textLight),
               const SizedBox(width: 6),
-              Flexible(
-                child: Row(
-                  children: [
-                    if (ride.carName.isNotEmpty) ...[
-                      Flexible(
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                          decoration: BoxDecoration(
-                            color: AppTheme.primaryLight, borderRadius: BorderRadius.circular(8)),
-                          child: Text(ride.carName,
-                              maxLines: 1, overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(fontSize: 11, color: AppTheme.primary,
-                                  fontWeight: FontWeight.w500)),
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                    ],
-                    if (ride.pricePerSeat > 0)
-                      Text('Rs ${ride.pricePerSeat.toStringAsFixed(0)}/seat',
-                          style: const TextStyle(fontSize: 11, color: AppTheme.success,
-                              fontWeight: FontWeight.w500)),
-                    const SizedBox(width: 8),
-                    const Icon(Icons.people_outline, size: 14, color: AppTheme.textLight),
-                    const SizedBox(width: 3),
-                    Text('$bookedSeats/${ride.totalSeats}',
-                        style: const TextStyle(fontSize: 11, color: AppTheme.textMedium)),
-                  ],
-                ),
-              ),
-              const Spacer(),
-              if (ride.status == 'upcoming') ...[
-                TextButton(
-                  onPressed: () => context.push('/ride/${ride.id}/requests'),
-                  style: TextButton.styleFrom(
-                    foregroundColor: AppTheme.primary, padding: EdgeInsets.zero,
-                    minimumSize: Size.zero, tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                  child: const Text('Manage', style: TextStyle(fontSize: 12)),
-                ),
-                const SizedBox(width: 8),
-                GestureDetector(
-                  onTap: () async {
-                    final confirm = await showDialog<bool>(
-                      context: context,
-                      barrierDismissible: false,
-                      builder: (_) => AlertDialog(
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                        title: const Row(
-                          children: [
-                            Icon(Icons.directions_car_outlined, color: AppTheme.error, size: 22),
-                            SizedBox(width: 8),
-                            Text('Cancel Ride?', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
-                          ],
-                        ),
-                        content: const Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('Are you sure you want to cancel this ride?',
-                                style: TextStyle(fontSize: 14, color: AppTheme.textDark)),
-                            SizedBox(height: 8),
-                            Text('• All passengers will be notified',
-                                style: TextStyle(fontSize: 12, color: AppTheme.textMedium)),
-                            Text('• All bookings will be cancelled',
-                                style: TextStyle(fontSize: 12, color: AppTheme.textMedium)),
-                            Text('• This action cannot be undone',
-                                style: TextStyle(fontSize: 12, color: AppTheme.error)),
-                          ],
-                        ),
-                        actions: [
-                          TextButton(
-                            onPressed: () => Navigator.pop(context, false),
-                            child: const Text('No, Keep It', style: TextStyle(color: AppTheme.textMedium)),
-                          ),
-                          ElevatedButton(
-                            onPressed: () => Navigator.pop(context, true),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: AppTheme.error,
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                            ),
-                            child: const Text('Yes, Cancel'),
-                          ),
-                        ],
-                      ),
-                    );
-                    if (confirm == true && context.mounted) {
-                      // 5-minute cancel window for driver
-                      final minutesSinceCreated = DateTime.now().difference(ride.createdAt).inMinutes;
-                      if (minutesSinceCreated > 5) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: const Row(children: [
-                              Icon(Icons.timer_off, color: Colors.white, size: 18),
-                              SizedBox(width: 10),
-                              Expanded(child: Text('Cancel window expired. Rides can only be cancelled within 5 minutes of publishing.')),
-                            ]),
-                            backgroundColor: AppTheme.warning,
-                            behavior: SnackBarBehavior.floating,
-                            margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                            duration: const Duration(seconds: 4),
-                          ),
-                        );
-                        return;
-                      }
-                      try {
-                        await RideService().cancelRide(ride.id);
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Ride cancelled. All passengers have been notified.'),
-                            backgroundColor: AppTheme.success,
-                            behavior: SnackBarBehavior.floating,
-                          ));
-                        }
-                      } catch (e) {
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text('Error: $e'),
-                            backgroundColor: AppTheme.error,
-                            behavior: SnackBarBehavior.floating,
-                            margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                          ));
-                        }
-                      }
-                    }
-                  },
+              if (ride.carName.isNotEmpty) ...[
+                Flexible(
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                     decoration: BoxDecoration(
-                      color: AppTheme.error.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Text('Cancel',
-                        style: TextStyle(fontSize: 12, color: AppTheme.error, fontWeight: FontWeight.w600)),
+                      color: AppTheme.primaryLight, borderRadius: BorderRadius.circular(8)),
+                    child: Text(ride.carName,
+                        maxLines: 1, overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 11, color: AppTheme.primary,
+                            fontWeight: FontWeight.w500)),
                   ),
                 ),
-              ] else
-                const Icon(Icons.arrow_forward_ios, size: 12, color: AppTheme.textLight),
+                const SizedBox(width: 6),
+              ],
+              if (ride.pricePerSeat > 0)
+                Text('Rs ${ride.pricePerSeat.toStringAsFixed(0)}/seat',
+                    style: const TextStyle(fontSize: 11, color: AppTheme.success,
+                        fontWeight: FontWeight.w500)),
+              const SizedBox(width: 8),
+              const Icon(Icons.people_outline, size: 14, color: AppTheme.textLight),
+              const SizedBox(width: 3),
+              Text('$bookedSeats/${ride.totalSeats}',
+                  style: const TextStyle(fontSize: 11, color: AppTheme.textMedium)),
             ]),
+            if (ride.status == 'upcoming') ...[
+              const SizedBox(height: 10),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: () => context.push('/ride/${ride.id}/requests'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: AppTheme.primary, padding: EdgeInsets.zero,
+                      minimumSize: Size.zero, tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    child: const Text('Manage', style: TextStyle(fontSize: 12)),
+                  ),
+                  const SizedBox(width: 8),
+                  GestureDetector(
+                    onTap: () async {
+                      final confirm = await showDialog<bool>(
+                        context: context,
+                        barrierDismissible: false,
+                        builder: (_) => AlertDialog(
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                          title: const Row(
+                            children: [
+                              Icon(Icons.directions_car_outlined, color: AppTheme.error, size: 22),
+                              SizedBox(width: 8),
+                              Text('Cancel Ride?', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                            ],
+                          ),
+                          content: const Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('Are you sure you want to cancel this ride?',
+                                  style: TextStyle(fontSize: 14, color: AppTheme.textDark)),
+                              SizedBox(height: 8),
+                              Text('• All passengers will be notified',
+                                  style: TextStyle(fontSize: 12, color: AppTheme.textMedium)),
+                              Text('• All bookings will be cancelled',
+                                  style: TextStyle(fontSize: 12, color: AppTheme.textMedium)),
+                              Text('• This action cannot be undone',
+                                  style: TextStyle(fontSize: 12, color: AppTheme.error)),
+                            ],
+                          ),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(context, false),
+                              child: const Text('No, Keep It', style: TextStyle(color: AppTheme.textMedium)),
+                            ),
+                            ElevatedButton(
+                              onPressed: () => Navigator.pop(context, true),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: AppTheme.error,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                              ),
+                              child: const Text('Yes, Cancel'),
+                            ),
+                          ],
+                        ),
+                      );
+                      if (confirm == true && context.mounted) {
+                        // 5-minute cancel window for driver
+                        final minutesSinceCreated = DateTime.now().difference(ride.createdAt).inMinutes;
+                        if (minutesSinceCreated > 5) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: const Row(children: [
+                                Icon(Icons.timer_off, color: Colors.white, size: 18),
+                                SizedBox(width: 10),
+                                Expanded(child: Text('Cancel window expired. Rides can only be cancelled within 5 minutes of publishing.')),
+                              ]),
+                              backgroundColor: AppTheme.warning,
+                              behavior: SnackBarBehavior.floating,
+                              margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              duration: const Duration(seconds: 4),
+                            ),
+                          );
+                          return;
+                        }
+                        try {
+                          await RideService().cancelRide(ride.id);
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Ride cancelled. All passengers have been notified.'),
+                              backgroundColor: AppTheme.success,
+                              behavior: SnackBarBehavior.floating,
+                            ));
+                          }
+                        } catch (e) {
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Error: $e'),
+                              backgroundColor: AppTheme.error,
+                              behavior: SnackBarBehavior.floating,
+                              margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            ));
+                          }
+                        }
+                      }
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: AppTheme.error.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Text('Cancel',
+                          style: TextStyle(fontSize: 12, color: AppTheme.error, fontWeight: FontWeight.w600)),
+                    ),
+                  ),
+                ],
+              ),
+            ] else ...[
+              const SizedBox(height: 4),
+              const Align(
+                alignment: Alignment.centerRight,
+                child: Icon(Icons.arrow_forward_ios, size: 12, color: AppTheme.textLight),
+              ),
+            ],
           ],
         ),
       ),
